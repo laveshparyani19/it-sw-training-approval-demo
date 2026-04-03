@@ -14,11 +14,11 @@ namespace ApprovalDemo.Api.Data
 
         public ApprovalRepository(IConfiguration configuration)
         {
-            _connectionString = configuration.GetConnectionString("DefaultConnection") 
+            _connectionString = configuration.GetConnectionString("DefaultConnection")
                 ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
         }
 
-            public async Task<int> CreateRequestAsync(CreateRequestDto dto)
+        public async Task<int> CreateRequestAsync(CreateRequestDto dto)
         {
             using var connection = new NpgsqlConnection(_connectionString);
             const string sql = @"INSERT INTO ApprovalRequest (Title, RequestedBy, Status, CreatedAt)
