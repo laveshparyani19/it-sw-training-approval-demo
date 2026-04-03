@@ -1,4 +1,4 @@
-using Microsoft.Data.SqlClient;
+using Npgsql;
 using System.Data;
 using Microsoft.Extensions.Configuration;
 using ApprovalDemo.Api.Models;
@@ -18,11 +18,14 @@ namespace ApprovalDemo.Api.Data
                 ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
         }
 
-        public async Task<int> CreateRequestAsync(CreateRequestDto dto)
+            public async Task<int> CreateRequestAsync(CreateRequestDto dto)
         {
-            using var connection = new SqlConnection(_connectionString);
-            using var command = new SqlCommand("SP_ApprovalRequest_Create", connection);
-            command.CommandType = CommandType.StoredProcedure;
+            using var connection = new NpgsqlConnection(_connectionString);
+            const string sql = @"INSERT INTO ApprovalRequest (Title, RequestedBy, Status, CreatedAt)
+                                 VALUES (@Title, @RequestedBy, 0, NOW())
+                                 RETURNING Id";
+
+            using var command = new NpgsqlCommand(sql, connection);
             command.Parameters.AddWithValue("@Title", dto.Title);
             command.Parameters.AddWithValue("@RequestedBy", dto.RequestedBy);
 
@@ -34,9 +37,11 @@ namespace ApprovalDemo.Api.Data
         public async Task<List<ApprovalRequest>> GetPendingRequestsAsync()
         {
             var requests = new List<ApprovalRequest>();
-            using var connection = new SqlConnection(_connectionString);
-            using var command = new SqlCommand("SP_ApprovalRequest_GetPending", connection);
-            command.CommandType = CommandType.StoredProcedure;
+
+            using var connection = new NpgsqlConnection(_connectionString);
+            const string sql = "SELECT * FROM ApprovalRequest WHERE Status = 0 ORDER BY CreatedAt DESC";
+
+            using var command = new NpgsqlCommand(sql, connection);
 
             await connection.OpenAsync();
             using var reader = await command.ExecuteReaderAsync();
@@ -50,9 +55,15 @@ namespace ApprovalDemo.Api.Data
         public async Task<int> ApproveRequestAsync(int id, string decisionBy)
         {
             Console.WriteLine($"Repository: Approving request {id} by {decisionBy}");
-            using var connection = new SqlConnection(_connectionString);
-            using var command = new SqlCommand("SP_ApprovalRequest_Approve", connection);
-            command.CommandType = CommandType.StoredProcedure;
+
+            using var connection = new NpgsqlConnection(_connectionString);
+            const string sql = @"UPDATE ApprovalRequest
+                                 SET Status = 1,
+                                     DecisionBy = @DecisionBy,
+                                     DecisionAt = NOW()
+                                 WHERE Id = @Id";
+
+            using var command = new NpgsqlCommand(sql, connection);
             command.Parameters.AddWithValue("@Id", id);
             command.Parameters.AddWithValue("@DecisionBy", decisionBy);
 
@@ -65,9 +76,16 @@ namespace ApprovalDemo.Api.Data
         public async Task<int> RejectRequestAsync(int id, string decisionBy, string rejectReason)
         {
             Console.WriteLine($"Repository: Rejecting request {id} by {decisionBy}, reason: {rejectReason}");
-            using var connection = new SqlConnection(_connectionString);
-            using var command = new SqlCommand("SP_ApprovalRequest_Reject", connection);
-            command.CommandType = CommandType.StoredProcedure;
+
+            using var connection = new NpgsqlConnection(_connectionString);
+            const string sql = @"UPDATE ApprovalRequest
+                                 SET Status = 2,
+                                     DecisionBy = @DecisionBy,
+                                     DecisionAt = NOW(),
+                                     RejectReason = @RejectReason
+                                 WHERE Id = @Id";
+
+            using var command = new NpgsqlCommand(sql, connection);
             command.Parameters.AddWithValue("@Id", id);
             command.Parameters.AddWithValue("@DecisionBy", decisionBy);
             command.Parameters.AddWithValue("@RejectReason", rejectReason);
@@ -80,9 +98,10 @@ namespace ApprovalDemo.Api.Data
 
         public async Task<ApprovalRequest?> GetByIdAsync(int id)
         {
-            using var connection = new SqlConnection(_connectionString);
-            using var command = new SqlCommand("SP_ApprovalRequest_GetById", connection);
-            command.CommandType = CommandType.StoredProcedure;
+            using var connection = new NpgsqlConnection(_connectionString);
+            const string sql = "SELECT * FROM ApprovalRequest WHERE Id = @Id";
+
+            using var command = new NpgsqlCommand(sql, connection);
             command.Parameters.AddWithValue("@Id", id);
 
             await connection.OpenAsync();
@@ -94,18 +113,18 @@ namespace ApprovalDemo.Api.Data
             return null;
         }
 
-        private static ApprovalRequest MapToApprovalRequest(SqlDataReader reader)
+        private static ApprovalRequest MapToApprovalRequest(NpgsqlDataReader reader)
         {
             return new ApprovalRequest
             {
-                Id = reader.GetInt32("Id"),
-                Title = reader.GetString("Title"),
-                RequestedBy = reader.GetString("RequestedBy"),
-                Status = reader.GetByte("Status"),
-                CreatedAt = reader.GetDateTime("CreatedAt"),
-                DecisionBy = reader.IsDBNull("DecisionBy") ? null : reader.GetString("DecisionBy"),
-                DecisionAt = reader.IsDBNull("DecisionAt") ? null : reader.GetDateTime("DecisionAt"),
-                RejectReason = reader.IsDBNull("RejectReason") ? null : reader.GetString("RejectReason")
+                Id = reader.GetInt32(reader.GetOrdinal("Id")),
+                Title = reader.GetString(reader.GetOrdinal("Title")),
+                RequestedBy = reader.GetString(reader.GetOrdinal("RequestedBy")),
+                Status = reader.GetByte(reader.GetOrdinal("Status")),
+                CreatedAt = reader.GetDateTime(reader.GetOrdinal("CreatedAt")),
+                DecisionBy = reader.IsDBNull(reader.GetOrdinal("DecisionBy")) ? null : reader.GetString(reader.GetOrdinal("DecisionBy")),
+                DecisionAt = reader.IsDBNull(reader.GetOrdinal("DecisionAt")) ? null : reader.GetDateTime(reader.GetOrdinal("DecisionAt")),
+                RejectReason = reader.IsDBNull(reader.GetOrdinal("RejectReason")) ? null : reader.GetString(reader.GetOrdinal("RejectReason"))
             };
         }
     }
