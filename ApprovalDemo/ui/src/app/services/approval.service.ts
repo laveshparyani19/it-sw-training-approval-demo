@@ -7,7 +7,7 @@ import { ApprovalRequest, CreateRequestDto, DecisionDto } from '../models/approv
   providedIn: 'root'
 })
 export class ApprovalService {
-  private apiUrl = 'http://localhost:5249/api/approval-requests'; // Adjusted to match backend port
+  private apiUrl = 'https://it-sw-training-approval-backend.onrender.com/api/approval-requests';
 
   constructor(private http: HttpClient) { }
 
