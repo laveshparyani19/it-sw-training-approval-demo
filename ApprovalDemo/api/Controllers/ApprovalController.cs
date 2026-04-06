@@ -17,8 +17,11 @@ namespace ApprovalDemo.Api.Controllers
         }
 
         [HttpPost]
-        public async Task<IActionResult> Create(CreateRequestDto dto)
+        public async Task<IActionResult> Create([FromBody] CreateRequestDto dto)
         {
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
+
             var id = await _repository.CreateRequestAsync(dto);
             return CreatedAtAction(nameof(GetById), new { id }, new { id, dto.Title });
         }
@@ -33,63 +36,58 @@ namespace ApprovalDemo.Api.Controllers
         [HttpGet("{id}")]
         public async Task<IActionResult> GetById(int id)
         {
+            if (id <= 0)
+                return BadRequest("Invalid request ID");
+
             var request = await _repository.GetByIdAsync(id);
-            if (request == null) return NotFound();
+            if (request == null)
+                return NotFound();
             return Ok(request);
         }
 
         [HttpPost("{id}/approve")]
         public async Task<IActionResult> Approve(int id, [FromBody] DecisionDto dto)
         {
-            Console.WriteLine($"Controller: Received Approve for {id}");
+            if (id <= 0)
+                return BadRequest("Invalid request ID");
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
+
             var request = await _repository.GetByIdAsync(id);
-            if (request == null) 
-            {
-                Console.WriteLine($"Controller: Request {id} not found");
+            if (request == null)
                 return NotFound();
-            }
-            if (request.Status != 0) 
-            {
-                Console.WriteLine($"Controller: Request {id} is already processed (Status: {request.Status})");
+
+            if (request.Status != 0)
                 return BadRequest("Request is already processed.");
-            }
 
             var rowsAffected = await _repository.ApproveRequestAsync(id, dto.DecisionBy);
             if (rowsAffected == 0)
-            {
-                Console.WriteLine($"Controller: WARNING - No rows updated for request {id}");
-                return StatusCode(500, "Failed to update status in database.");
-            }
+                return StatusCode(500, "Failed to update request status.");
 
-            Console.WriteLine($"Controller: Successfully approved {id}");
             return Ok(new { message = "Request approved successfully." });
         }
 
         [HttpPost("{id}/reject")]
         public async Task<IActionResult> Reject(int id, [FromBody] DecisionDto dto)
         {
-            Console.WriteLine($"Controller: Received Reject for {id}");
+            if (id <= 0)
+                return BadRequest("Invalid request ID");
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
+            if (string.IsNullOrWhiteSpace(dto.RejectReason))
+                return BadRequest("Reject reason is required.");
+
             var request = await _repository.GetByIdAsync(id);
             if (request == null)
-            {
-                Console.WriteLine($"Controller: Request {id} not found");
                 return NotFound();
-            }
+
             if (request.Status != 0)
-            {
-                Console.WriteLine($"Controller: Request {id} is already processed (Status: {request.Status})");
                 return BadRequest("Request is already processed.");
-            }
-            if (string.IsNullOrEmpty(dto.RejectReason)) return BadRequest("Reject reason is required.");
 
             var rowsAffected = await _repository.RejectRequestAsync(id, dto.DecisionBy, dto.RejectReason);
             if (rowsAffected == 0)
-            {
-                Console.WriteLine($"Controller: WARNING - No rows updated for request {id}");
-                return StatusCode(500, "Failed to update status in database.");
-            }
+                return StatusCode(500, "Failed to update request status.");
 
-            Console.WriteLine($"Controller: Successfully rejected {id}");
             return Ok(new { message = "Request rejected successfully." });
         }
     }

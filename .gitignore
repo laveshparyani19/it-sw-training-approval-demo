@@ -13,6 +13,8 @@ obj/
 *.log
 *.tmp
 *.temp
+*.nupkg
+packages/
 
 # Build outputs
 ApprovalDemo/api/build_output.txt
@@ -23,11 +25,35 @@ ApprovalDemo/ui/dist/
 .idea/
 *.swp
 *.swo
+*.DotSettings
 
 # OS
 .DS_Store
 Thumbs.db
 
-# Environment
+# Environment & Secrets (CRITICAL)
 .env
+.env.local
+.env.*.local
 appsettings.Development.json
+appsettings.*.json
+!appsettings.json
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Credentials
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Logs
+logs/
+*.log
+
+# Coverage
+coverage/
+.coverage
