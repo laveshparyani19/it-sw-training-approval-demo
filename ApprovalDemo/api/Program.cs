@@ -13,11 +13,16 @@ builder.Services.AddScoped<ApprovalRepository>();
 // Enable CORS
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowAngular", policy =>
+    options.AddPolicy("AllowFrontend", policy =>
     {
-        policy.AllowAnyOrigin()
+        policy.WithOrigins(
+            "https://it-sw-training-approval-demo-j346jc9qg.vercel.app",
+            "https://it-sw-training-approval-demo.vercel.app",
+            "http://localhost:4200",
+            "http://localhost:3000")
               .AllowAnyHeader()
-              .AllowAnyMethod();
+              .AllowAnyMethod()
+              .AllowCredentials();
     });
 });
 
@@ -30,7 +35,7 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-app.UseCors("AllowAngular");
+app.UseCors("AllowFrontend");
 
 app.UseAuthorization();
 
