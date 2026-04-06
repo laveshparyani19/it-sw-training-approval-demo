@@ -1,4 +1,5 @@
 using ApprovalDemo.Api.Data;
+using ApprovalDemo.Api.Services;
 using ApprovalDemo.Api.Middleware;
 using System.Net;
 
@@ -30,6 +31,14 @@ else
 
 builder.Configuration["ConnectionStrings:DefaultConnection"] = connectionString;
 
+var mssqlConnectionString = Environment.GetEnvironmentVariable("MSSQL_CONNECTION_STRING")
+    ?? builder.Configuration["ApprovalDemoDbConnectionString"]
+    ?? builder.Configuration.GetConnectionString("MssqlReporting");
+if (!string.IsNullOrWhiteSpace(mssqlConnectionString))
+{
+    builder.Configuration["ConnectionStrings:MssqlReporting"] = mssqlConnectionString;
+}
+
 // Configure Kestrel with request size limits
 builder.WebHost.ConfigureKestrel(options =>
 {
@@ -43,6 +52,8 @@ builder.Services.AddSwaggerGen();
 
 // Register Repository
 builder.Services.AddScoped<ApprovalRepository>();
+builder.Services.AddSingleton<ApprovalSyncService>();
+builder.Services.AddHostedService<ApprovalSyncHostedService>();
 
 // Enable CORS - allow dynamic frontend URLs
 builder.Services.AddCors(options =>
@@ -158,6 +169,12 @@ app.UseSecurityHeaders();
 app.UseAuthorization();
 
 app.MapControllers();
+
+using (var scope = app.Services.CreateScope())
+{
+    var syncService = scope.ServiceProvider.GetRequiredService<ApprovalSyncService>();
+    await syncService.InitializeAsync(CancellationToken.None);
+}
 
 app.Run();
 

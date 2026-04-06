@@ -10,6 +10,9 @@ namespace ApprovalDemo.Api.Models
         public string RequestedBy { get; set; } = string.Empty;
         public byte Status { get; set; } // 0=Pending, 1=Approved, 2=Rejected
         public DateTime CreatedAt { get; set; }
+        public DateTime UpdatedAt { get; set; }
+        public bool IsDeleted { get; set; }
+        public Guid OperationId { get; set; }
         public string? DecisionBy { get; set; }
         public DateTime? DecisionAt { get; set; }
         public string? RejectReason { get; set; }

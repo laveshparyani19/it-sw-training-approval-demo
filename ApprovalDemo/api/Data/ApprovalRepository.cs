@@ -21,16 +21,23 @@ namespace ApprovalDemo.Api.Data
         public async Task<int> CreateRequestAsync(CreateRequestDto dto)
         {
             using var connection = new NpgsqlConnection(_connectionString);
-            const string sql = "INSERT INTO \"ApprovalRequest\" (\"Title\", \"RequestedBy\", \"Status\", \"CreatedAt\") " +
-                               "VALUES(@Title, @RequestedBy, 0, NOW()) " +
+            const string sql = "INSERT INTO \"ApprovalRequest\" (\"Title\", \"RequestedBy\", \"Status\", \"CreatedAt\", \"UpdatedAt\", \"IsDeleted\", \"OperationId\") " +
+                               "VALUES(@Title, @RequestedBy, 0, NOW(), NOW(), FALSE, @OperationId) " +
                                "RETURNING \"Id\"";
 
             using var command = new NpgsqlCommand(sql, connection);
             command.Parameters.AddWithValue("@Title", dto.Title);
             command.Parameters.AddWithValue("@RequestedBy", dto.RequestedBy);
+            command.Parameters.AddWithValue("@OperationId", Guid.NewGuid());
 
             await connection.OpenAsync();
-            var id = (int)await command.ExecuteScalarAsync();
+            var idObj = await command.ExecuteScalarAsync();
+            if (idObj is null)
+            {
+                throw new InvalidOperationException("Insert did not return a new Id.");
+            }
+
+            var id = Convert.ToInt32(idObj);
             return id;
         }
 
@@ -39,7 +46,7 @@ namespace ApprovalDemo.Api.Data
             var requests = new List<ApprovalRequest>();
 
             using var connection = new NpgsqlConnection(_connectionString);
-            const string sql = "SELECT * FROM \"ApprovalRequest\" WHERE \"Status\" = 0 ORDER BY \"CreatedAt\" DESC";
+            const string sql = "SELECT * FROM \"ApprovalRequest\" WHERE \"Status\" = 0 AND COALESCE(\"IsDeleted\", FALSE) = FALSE ORDER BY \"CreatedAt\" DESC";
 
             using var command = new NpgsqlCommand(sql, connection);
 
@@ -60,12 +67,15 @@ namespace ApprovalDemo.Api.Data
             const string sql = "UPDATE \"ApprovalRequest\" " +
                                "SET \"Status\" = 1, " +
                                "\"DecisionBy\" = @DecisionBy, " +
-                               "\"DecisionAt\" = NOW() " +
-                               "WHERE \"Id\" = @Id";
+                               "\"DecisionAt\" = NOW(), " +
+                               "\"UpdatedAt\" = NOW(), " +
+                               "\"OperationId\" = @OperationId " +
+                               "WHERE \"Id\" = @Id AND COALESCE(\"IsDeleted\", FALSE) = FALSE";
 
             using var command = new NpgsqlCommand(sql, connection);
             command.Parameters.AddWithValue("@Id", id);
             command.Parameters.AddWithValue("@DecisionBy", decisionBy);
+            command.Parameters.AddWithValue("@OperationId", Guid.NewGuid());
 
             await connection.OpenAsync();
             int rows = await command.ExecuteNonQueryAsync();
@@ -82,13 +92,16 @@ namespace ApprovalDemo.Api.Data
                                "SET \"Status\" = 2, " +
                                "\"DecisionBy\" = @DecisionBy, " +
                                "\"DecisionAt\" = NOW(), " +
-                               "\"RejectReason\" = @RejectReason " +
-                               "WHERE \"Id\" = @Id";
+                               "\"RejectReason\" = @RejectReason, " +
+                               "\"UpdatedAt\" = NOW(), " +
+                               "\"OperationId\" = @OperationId " +
+                               "WHERE \"Id\" = @Id AND COALESCE(\"IsDeleted\", FALSE) = FALSE";
 
             using var command = new NpgsqlCommand(sql, connection);
             command.Parameters.AddWithValue("@Id", id);
             command.Parameters.AddWithValue("@DecisionBy", decisionBy);
             command.Parameters.AddWithValue("@RejectReason", rejectReason);
+            command.Parameters.AddWithValue("@OperationId", Guid.NewGuid());
 
             await connection.OpenAsync();
             int rows = await command.ExecuteNonQueryAsync();
@@ -99,7 +112,7 @@ namespace ApprovalDemo.Api.Data
         public async Task<ApprovalRequest?> GetByIdAsync(int id)
         {
             using var connection = new NpgsqlConnection(_connectionString);
-            const string sql = "SELECT * FROM \"ApprovalRequest\" WHERE \"Id\" = @Id";
+            const string sql = "SELECT * FROM \"ApprovalRequest\" WHERE \"Id\" = @Id AND COALESCE(\"IsDeleted\", FALSE) = FALSE";
 
             using var command = new NpgsqlCommand(sql, connection);
             command.Parameters.AddWithValue("@Id", id);
@@ -122,6 +135,13 @@ namespace ApprovalDemo.Api.Data
                 RequestedBy = reader.GetString(reader.GetOrdinal("RequestedBy")),
                 Status = (byte)reader.GetInt16(reader.GetOrdinal("Status")),
                 CreatedAt = reader.GetDateTime(reader.GetOrdinal("CreatedAt")),
+                UpdatedAt = reader.IsDBNull(reader.GetOrdinal("UpdatedAt"))
+                    ? reader.GetDateTime(reader.GetOrdinal("CreatedAt"))
+                    : reader.GetDateTime(reader.GetOrdinal("UpdatedAt")),
+                IsDeleted = !reader.IsDBNull(reader.GetOrdinal("IsDeleted")) && reader.GetBoolean(reader.GetOrdinal("IsDeleted")),
+                OperationId = reader.IsDBNull(reader.GetOrdinal("OperationId"))
+                    ? Guid.Empty
+                    : reader.GetGuid(reader.GetOrdinal("OperationId")),
                 DecisionBy = reader.IsDBNull(reader.GetOrdinal("DecisionBy")) ? null : reader.GetString(reader.GetOrdinal("DecisionBy")),
                 DecisionAt = reader.IsDBNull(reader.GetOrdinal("DecisionAt")) ? null : reader.GetDateTime(reader.GetOrdinal("DecisionAt")),
                 RejectReason = reader.IsDBNull(reader.GetOrdinal("RejectReason")) ? null : reader.GetString(reader.GetOrdinal("RejectReason"))
