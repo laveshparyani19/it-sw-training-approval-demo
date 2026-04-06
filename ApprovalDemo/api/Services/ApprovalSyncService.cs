@@ -19,6 +19,8 @@ namespace ApprovalDemo.Api.Services
         private readonly ILogger<ApprovalSyncService> _logger;
         private readonly SemaphoreSlim _syncLock = new(1, 1);
         private DateTime _lastReconciliationDateUtc = DateTime.MinValue;
+        private volatile bool _mssqlReady;
+        private string _mssqlDisabledReason = "MSSQL sync not initialized.";
 
         public ApprovalSyncService(IConfiguration configuration, ILogger<ApprovalSyncService> logger)
         {
@@ -26,6 +28,11 @@ namespace ApprovalDemo.Api.Services
             _supabaseConnectionString = configuration.GetConnectionString("DefaultConnection")
                 ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
             _mssqlConnectionString = configuration.GetConnectionString("MssqlReporting");
+            _mssqlReady = !string.IsNullOrWhiteSpace(_mssqlConnectionString);
+            if (!_mssqlReady)
+            {
+                _mssqlDisabledReason = "MSSQL_CONNECTION_STRING is not configured.";
+            }
         }
 
         public bool IsEnabled => !string.IsNullOrWhiteSpace(_mssqlConnectionString);
@@ -35,7 +42,18 @@ namespace ApprovalDemo.Api.Services
             await EnsureSupabaseSchemaAsync(cancellationToken);
             if (IsEnabled)
             {
-                await EnsureMssqlSchemaAsync(cancellationToken);
+                try
+                {
+                    await EnsureMssqlSchemaAsync(cancellationToken);
+                    _mssqlReady = true;
+                    _mssqlDisabledReason = string.Empty;
+                }
+                catch (Exception ex)
+                {
+                    _mssqlReady = false;
+                    _mssqlDisabledReason = $"MSSQL target unavailable: {ex.Message}";
+                    _logger.LogWarning(ex, "MSSQL sync initialization skipped. API will continue using Supabase as primary.");
+                }
             }
         }
 
@@ -51,7 +69,22 @@ namespace ApprovalDemo.Api.Services
                     return SyncRunResult.Disabled("MSSQL_CONNECTION_STRING is not configured.");
                 }
 
-                await EnsureMssqlSchemaAsync(cancellationToken);
+                if (!_mssqlReady)
+                {
+                    try
+                    {
+                        await EnsureMssqlSchemaAsync(cancellationToken);
+                        _mssqlReady = true;
+                        _mssqlDisabledReason = string.Empty;
+                    }
+                    catch (Exception ex)
+                    {
+                        _mssqlReady = false;
+                        _mssqlDisabledReason = $"MSSQL target unavailable: {ex.Message}";
+                        _logger.LogWarning(ex, "Sync run skipped because MSSQL target is unreachable.");
+                        return SyncRunResult.Disabled(_mssqlDisabledReason);
+                    }
+                }
 
                 var currentWatermark = await GetWatermarkAsync(cancellationToken);
                 var changedRows = await GetChangedRowsAsync(currentWatermark, batchSize: 200, cancellationToken);
@@ -134,7 +167,27 @@ namespace ApprovalDemo.Api.Services
                     };
                 }
 
-                await EnsureMssqlSchemaAsync(cancellationToken);
+                if (!_mssqlReady)
+                {
+                    try
+                    {
+                        await EnsureMssqlSchemaAsync(cancellationToken);
+                        _mssqlReady = true;
+                        _mssqlDisabledReason = string.Empty;
+                    }
+                    catch (Exception ex)
+                    {
+                        _mssqlReady = false;
+                        _mssqlDisabledReason = $"MSSQL target unavailable: {ex.Message}";
+                        _logger.LogWarning(ex, "Reconciliation skipped because MSSQL target is unreachable.");
+                        return new SyncReconciliationResult
+                        {
+                            Enabled = false,
+                            GeneratedAtUtc = DateTime.UtcNow,
+                            Message = _mssqlDisabledReason
+                        };
+                    }
+                }
                 var report = await GenerateReconciliationReportAsync(cancellationToken);
                 await SaveReconciliationReportAsync(report, cancellationToken);
                 _lastReconciliationDateUtc = DateTime.UtcNow.Date;
@@ -355,6 +408,11 @@ VALUES (@SyncName, @EntityId, @OperationId, @Payload::jsonb, @Error, @AttemptCou
         private async Task MaybeRunDailyReconciliationAsync(CancellationToken cancellationToken)
         {
             if (!IsEnabled)
+            {
+                return;
+            }
+
+            if (!_mssqlReady)
             {
                 return;
             }
