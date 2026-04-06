@@ -23,19 +23,32 @@ builder.Services.AddSwaggerGen();
 // Register Repository
 builder.Services.AddScoped<ApprovalRepository>();
 
-// Enable CORS - whitelist specific domains
+// Enable CORS - allow dynamic frontend URLs
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
     {
-        policy.WithOrigins(
-            "https://it-sw-training-approval-demo-j346jc9qg.vercel.app",
-            "https://it-sw-training-approval-demo.vercel.app",
-            "http://localhost:4200",
-            "http://localhost:3000")
-              .AllowAnyHeader()
-              .AllowAnyMethod()
-              .AllowCredentials();
+        var frontendUrl = Environment.GetEnvironmentVariable("FRONTEND_URL");
+
+        policy.SetIsOriginAllowed(origin =>
+        {
+            // Always allow localhost for development
+            if (origin.StartsWith("http://localhost") || origin.StartsWith("http://127.0.0.1"))
+                return true;
+
+            // If FRONTEND_URL is set in environment, allow it
+            if (!string.IsNullOrEmpty(frontendUrl) && origin == frontendUrl)
+                return true;
+
+            // Allow any vercel.app subdomain for preview deployments
+            if (origin.Contains(".vercel.app"))
+                return true;
+
+            return false;
+        })
+        .AllowAnyHeader()
+        .AllowAnyMethod()
+        .AllowCredentials();
     });
 });
 
