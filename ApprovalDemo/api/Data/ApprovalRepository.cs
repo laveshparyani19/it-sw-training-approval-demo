@@ -21,9 +21,9 @@ namespace ApprovalDemo.Api.Data
         public async Task<int> CreateRequestAsync(CreateRequestDto dto)
         {
             using var connection = new NpgsqlConnection(_connectionString);
-            const string sql = @"INSERT INTO \"ApprovalRequest\" (\"Title\", \"RequestedBy\", \"Status\", \"CreatedAt\")
-                                 VALUES(@Title, @RequestedBy, 0, NOW())
-                                 RETURNING \"Id\"";
+            const string sql = "INSERT INTO \"ApprovalRequest\" (\"Title\", \"RequestedBy\", \"Status\", \"CreatedAt\") " +
+                               "VALUES(@Title, @RequestedBy, 0, NOW()) " +
+                               "RETURNING \"Id\"";
 
             using var command = new NpgsqlCommand(sql, connection);
             command.Parameters.AddWithValue("@Title", dto.Title);
@@ -57,11 +57,11 @@ namespace ApprovalDemo.Api.Data
             Console.WriteLine($"Repository: Approving request {id} by {decisionBy}");
 
             using var connection = new NpgsqlConnection(_connectionString);
-            const string sql = @"UPDATE \"ApprovalRequest\"
-                                 SET \"Status\" = 1,
-                                     \"DecisionBy\" = @DecisionBy,
-                                     \"DecisionAt\" = NOW()
-                                 WHERE \"Id\" = @Id";
+            const string sql = "UPDATE \"ApprovalRequest\" " +
+                               "SET \"Status\" = 1, " +
+                               "\"DecisionBy\" = @DecisionBy, " +
+                               "\"DecisionAt\" = NOW() " +
+                               "WHERE \"Id\" = @Id";
 
             using var command = new NpgsqlCommand(sql, connection);
             command.Parameters.AddWithValue("@Id", id);
@@ -78,12 +78,12 @@ namespace ApprovalDemo.Api.Data
             Console.WriteLine($"Repository: Rejecting request {id} by {decisionBy}, reason: {rejectReason}");
 
             using var connection = new NpgsqlConnection(_connectionString);
-            const string sql = @"UPDATE \"ApprovalRequest\"
-                                 SET \"Status\" = 2,
-                                     \"DecisionBy\" = @DecisionBy,
-                                     \"DecisionAt\" = NOW(),
-                                     \"RejectReason\" = @RejectReason
-                                 WHERE \"Id\" = @Id";
+            const string sql = "UPDATE \"ApprovalRequest\" " +
+                               "SET \"Status\" = 2, " +
+                               "\"DecisionBy\" = @DecisionBy, " +
+                               "\"DecisionAt\" = NOW(), " +
+                               "\"RejectReason\" = @RejectReason " +
+                               "WHERE \"Id\" = @Id";
 
             using var command = new NpgsqlCommand(sql, connection);
             command.Parameters.AddWithValue("@Id", id);
