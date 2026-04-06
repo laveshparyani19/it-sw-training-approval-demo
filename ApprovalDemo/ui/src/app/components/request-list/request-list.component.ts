@@ -9,49 +9,75 @@ import { ApprovalRequest } from '../../models/approval.model';
   standalone: true,
   imports: [CommonModule, FormsModule],
   template: `
-    <div class="container">
-      <div class="header">
-        <h1>Pending Approval Requests</h1>
-        <button class="btn btn-refresh" (click)="loadRequests()">Refresh List</button>
-      </div>
-      
-      <div *ngIf="loading" class="loader-box">
-        <p>Loading requests from API...</p>
-        <small>Check browser console for details</small>
-      </div>
-      
-      <table *ngIf="!loading" class="approval-table">
-        <thead>
-          <tr>
-            <th>ID</th>
-            <th>Title</th>
-            <th>Requested By</th>
-            <th>Created At</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr *ngFor="let request of requests">
-            <td>{{ request.id }}</td>
-            <td>{{ request.title }}</td>
-            <td>{{ request.requestedBy }}</td>
-            <td>{{ request.createdAt | date:'medium' }}</td>
-            <td>
-              <button class="btn btn-approve" (click)="approve(request.id)">Approve</button>
-              <button class="btn btn-reject" (click)="selectForRejection(request.id)">Reject</button>
-            </td>
-          </tr>
-          <tr *ngIf="requests.length === 0">
-            <td colspan="5" class="no-data">No pending requests found. Try seeding data via Swagger or SQL.</td>
-          </tr>
-        </tbody>
-      </table>
+    <section class="page-shell">
+      <div class="aurora"></div>
+      <div class="grain"></div>
 
-      <!-- Simple Reject Modal -->
+      <div class="container">
+        <header class="header">
+          <div>
+            <p class="eyebrow">Operations Console</p>
+            <h1>Pending Approval Requests</h1>
+            <p class="subtitle">Track, review, and resolve incoming requests quickly.</p>
+          </div>
+
+          <div class="header-actions">
+            <div class="stat-chip">
+              <span class="stat-value">{{ requests.length }}</span>
+              <span class="stat-label">Open</span>
+            </div>
+            <button class="btn btn-refresh" (click)="loadRequests()" [disabled]="loading">
+              {{ loading ? 'Refreshing...' : 'Refresh List' }}
+            </button>
+          </div>
+        </header>
+
+        <div *ngIf="loading" class="loader-box">
+          <div class="spinner"></div>
+          <p>Loading requests from API...</p>
+        </div>
+
+        <div *ngIf="!loading" class="table-wrap">
+          <table class="approval-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Title</th>
+                <th>Requested By</th>
+                <th>Created At</th>
+                <th class="actions-col">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let request of requests">
+                <td><span class="id-pill">#{{ request.id }}</span></td>
+                <td class="title-cell">{{ request.title }}</td>
+                <td>{{ request.requestedBy }}</td>
+                <td>{{ request.createdAt | date:'medium' }}</td>
+                <td>
+                  <div class="action-group">
+                    <button class="btn btn-approve" (click)="approve(request.id)">Approve</button>
+                    <button class="btn btn-reject" (click)="selectForRejection(request.id)">Reject</button>
+                  </div>
+                </td>
+              </tr>
+              <tr *ngIf="requests.length === 0">
+                <td colspan="5" class="no-data">No pending requests found. Seed data and hit refresh.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div *ngIf="showToast" class="toast" [class.success]="toastType === 'success'" [class.error]="toastType === 'error'">
+        <span>{{ toastMessage }}</span>
+        <button aria-label="Close" (click)="closeToast()">x</button>
+      </div>
+
       <div *ngIf="selectedId !== null" class="modal-overlay">
         <div class="modal-content">
           <h3>Reject Request #{{ selectedId }}</h3>
-          <p>Please provide a reason for rejection:</p>
+          <p>Add a short reason to keep an audit trail.</p>
           <textarea [(ngModel)]="rejectReason" rows="3" placeholder="Enter reason..."></textarea>
           <div class="modal-actions">
             <button class="btn btn-confirm-reject" (click)="confirmReject()" [disabled]="!rejectReason">Confirm Rejection</button>
@@ -59,38 +85,24 @@ import { ApprovalRequest } from '../../models/approval.model';
           </div>
         </div>
       </div>
-    </div>
+    </section>
   `,
-  styles: [`
-    .container { padding: 20px; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-    .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
-    .btn-refresh { background-color: #007bff; color: white; }
-    .loader-box { text-align: center; padding: 40px; background: #f8f9fa; border-radius: 8px; border: 1px dashed #ccc; }
-    .approval-table { width: 100%; border-collapse: collapse; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
-    .approval-table th, .approval-table td { text-align: left; padding: 12px; border-bottom: 1px solid #ddd; }
-    .approval-table th { background-color: #f8f9fa; font-weight: 600; }
-    .btn { padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; margin-right: 5px; transition: background 0.2s; }
-    .btn-approve { background-color: #28a745; color: white; }
-    .btn-reject { background-color: #dc3545; color: white; }
-    .btn-cancel { background-color: #6c757d; color: white; }
-    .no-data { text-align: center; padding: 20px; color: #666; font-style: italic; }
-    .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000; }
-    .modal-content { background: white; padding: 24px; border-radius: 8px; width: 400px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); }
-    textarea { width: 100%; margin: 10px 0; padding: 10px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
-    .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
-    .btn-confirm-reject { background-color: #dc3545; color: white; }
-  `]
+  styleUrl: './request-list.component.scss'
 })
 export class RequestListComponent implements OnInit {
   requests: ApprovalRequest[] = [];
   loading = true;
   selectedId: number | null = null;
   rejectReason = '';
+  showToast = false;
+  toastMessage = '';
+  toastType: 'success' | 'error' | 'info' = 'info';
+  private toastTimerId: number | null = null;
 
   constructor(
     private approvalService: ApprovalService,
     private cdr: ChangeDetectorRef
-  ) {}
+  ) { }
 
   ngOnInit(): void {
     console.log('RequestListComponent initialized');
@@ -111,6 +123,7 @@ export class RequestListComponent implements OnInit {
       error: (err) => {
         console.error('Error fetching requests:', err);
         this.loading = false;
+        this.showToastMessage('Could not fetch pending requests. Please retry.', 'error');
         this.cdr.detectChanges();
       },
       complete: () => {
@@ -125,12 +138,12 @@ export class RequestListComponent implements OnInit {
     this.approvalService.approveRequest(id, decision).subscribe({
       next: (resp) => {
         console.log('UI: Approve success:', resp);
-        alert('Request Approved!');
+        this.showToastMessage('Request approved successfully.', 'success');
         this.loadRequests();
       },
       error: (err) => {
         console.error('UI: Approve failed:', err);
-        alert('Approve failed! Check console for details.');
+        this.showToastMessage('Approve failed. Please try again.', 'error');
       }
     });
   }
@@ -149,22 +162,49 @@ export class RequestListComponent implements OnInit {
   confirmReject(): void {
     if (this.selectedId !== null) {
       console.log(`UI: Rejecting request ${this.selectedId}`);
-      const decision = { 
-        decisionBy: 'Admin', 
-        rejectReason: this.rejectReason 
+      const decision = {
+        decisionBy: 'Admin',
+        rejectReason: this.rejectReason
       };
       this.approvalService.rejectRequest(this.selectedId, decision).subscribe({
         next: (resp) => {
           console.log('UI: Reject success:', resp);
-          alert('Request Rejected!');
+          this.showToastMessage('Request rejected successfully.', 'success');
           this.selectedId = null;
           this.loadRequests();
         },
         error: (err) => {
           console.error('UI: Reject failed:', err);
-          alert('Reject failed! Check console for details.');
+          this.showToastMessage('Reject failed. Please try again.', 'error');
         }
       });
     }
+  }
+
+  closeToast(): void {
+    this.showToast = false;
+    if (this.toastTimerId !== null) {
+      window.clearTimeout(this.toastTimerId);
+      this.toastTimerId = null;
+    }
+    this.cdr.detectChanges();
+  }
+
+  private showToastMessage(message: string, type: 'success' | 'error' | 'info' = 'info'): void {
+    this.toastMessage = message;
+    this.toastType = type;
+    this.showToast = true;
+
+    if (this.toastTimerId !== null) {
+      window.clearTimeout(this.toastTimerId);
+    }
+
+    this.toastTimerId = window.setTimeout(() => {
+      this.showToast = false;
+      this.toastTimerId = null;
+      this.cdr.detectChanges();
+    }, 3200);
+
+    this.cdr.detectChanges();
   }
 }
