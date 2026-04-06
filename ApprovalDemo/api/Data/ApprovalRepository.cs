@@ -120,7 +120,7 @@ namespace ApprovalDemo.Api.Data
                 Id = reader.GetInt32(reader.GetOrdinal("Id")),
                 Title = reader.GetString(reader.GetOrdinal("Title")),
                 RequestedBy = reader.GetString(reader.GetOrdinal("RequestedBy")),
-                Status = reader.GetByte(reader.GetOrdinal("Status")),
+                Status = (byte)reader.GetInt16(reader.GetOrdinal("Status")),
                 CreatedAt = reader.GetDateTime(reader.GetOrdinal("CreatedAt")),
                 DecisionBy = reader.IsDBNull(reader.GetOrdinal("DecisionBy")) ? null : reader.GetString(reader.GetOrdinal("DecisionBy")),
                 DecisionAt = reader.IsDBNull(reader.GetOrdinal("DecisionAt")) ? null : reader.GetDateTime(reader.GetOrdinal("DecisionAt")),
