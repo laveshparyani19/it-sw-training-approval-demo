@@ -83,7 +83,13 @@ app.Use(async (context, next) =>
             context.Response.Headers["Access-Control-Allow-Origin"] = origin.ToString();
             context.Response.Headers["Access-Control-Allow-Credentials"] = "true";
         }
-        await context.Response.WriteAsJsonAsync(new { error = "Internal server error" });
+        await context.Response.WriteAsJsonAsync(new
+        {
+            error = "Internal server error",
+            message = ex.Message,
+            stackTrace = ex.StackTrace,
+            detail = ex.InnerException?.Message
+        });
     }
 });
 
