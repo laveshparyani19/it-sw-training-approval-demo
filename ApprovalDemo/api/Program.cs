@@ -62,14 +62,34 @@ if (app.Environment.IsDevelopment())
 }
 else
 {
-    // Disable Swagger in production
     app.UseHsts(); // HTTP Strict Transport Security
 }
+
+app.Use(async (context, next) =>
+{
+    try
+    {
+        await next();
+    }
+    catch (Exception ex)
+    {
+        var logger = context.RequestServices.GetRequiredService<ILogger<Program>>();
+        logger.LogError(ex, "Unhandled exception while processing request");
+
+        context.Response.Clear();
+        context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+        if (context.Request.Headers.TryGetValue("Origin", out var origin))
+        {
+            context.Response.Headers["Access-Control-Allow-Origin"] = origin.ToString();
+            context.Response.Headers["Access-Control-Allow-Credentials"] = "true";
+        }
+        await context.Response.WriteAsJsonAsync(new { error = "Internal server error" });
+    }
+});
 
 // CORS must be before other middleware
 app.UseCors("AllowFrontend");
 app.UseSecurityHeaders();
-app.UseHttpsRedirection();
 
 app.UseAuthorization();
 
