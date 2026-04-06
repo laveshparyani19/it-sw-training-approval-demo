@@ -66,9 +66,10 @@ else
     app.UseHsts(); // HTTP Strict Transport Security
 }
 
+// CORS must be before other middleware
+app.UseCors("AllowFrontend");
 app.UseSecurityHeaders();
 app.UseHttpsRedirection();
-app.UseCors("AllowFrontend");
 
 app.UseAuthorization();
 
