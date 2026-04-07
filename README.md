@@ -1,119 +1,133 @@
-# Approval Demo Application
+# IT SW Training Approval Demo
 
-A full-stack approval request management system built with .NET 10 ASP.NET Core API and Angular.
+Full-stack training project implementing an approval workflow with Approve and Reject actions using ASP.NET Core API and Angular dashboard UI.
 
-## 🚀 Live Demo
+## Live URLs
 
-The frontend is deployed on GitHub Pages: [View Demo](https://YOUR_USERNAME.github.io/YOUR_REPO_NAME/)
+- Frontend (Vercel): https://it-sw-training-approval-demo.vercel.app
+- Backend API (Render): https://it-sw-training-approval-backend.onrender.com
 
-## 📋 Features
+## Training Task Mapping
 
-- Submit approval requests
-- View pending approvals
-- Approve/reject requests
-- RESTful API backend
-- Modern Angular frontend
+Original task: Create form with approve and reject button in ASP.NET.
 
-## 🏗️ Architecture
+Implemented:
+- Request listing form-style workflow with Approve and Reject actions
+- ASP.NET API endpoints for create, approve, reject, and list operations
+- Rejection reason modal and validation
+- Dashboard UI with search and pagination
 
-- **Backend**: .NET 10 ASP.NET Core Web API
-- **Frontend**: Angular 21 with TypeScript
-- **Database**: SQL Server (local/development)
+## Features
 
-## 🛠️ Local Development
+- Approve and reject actions with validation
+- Pending request listing with modern dashboard layout
+- Search and pagination on request table
+- Supabase PostgreSQL as primary data store
+- Optional MSSQL reporting mirror sync worker
+- Manual sync and reconciliation endpoints
 
-### Prerequisites
+## Tech Stack
+
+- Backend: .NET 10 ASP.NET Core Web API
+- Frontend: Angular 21 (standalone components)
+- Primary DB: Supabase PostgreSQL (Npgsql)
+- Optional Reporting DB: MSSQL (Microsoft.Data.SqlClient)
+- Hosting: Render (API), Vercel (UI)
+
+## Repository About And Topics (GitHub)
+
+Use this for GitHub About:
+
+Training approval workflow dashboard with ASP.NET Core API and Angular UI, featuring approve/reject actions, search, pagination, and optional Supabase-to-MSSQL sync.
+
+Suggested Topics:
+
+- aspnet-core
+- dotnet
+- angular
+- typescript
+- webapi
+- approval-workflow
+- dashboard
+- supabase
+- postgresql
+- mssql
+- render
+- vercel
+
+## API Endpoints
+
+- GET /api/approval-requests/pending
+- GET /api/approval-requests/{id}
+- POST /api/approval-requests
+- POST /api/approval-requests/{id}/approve
+- POST /api/approval-requests/{id}/reject
+- POST /api/sync/run
+- POST /api/sync/reconcile
+
+## Local Development
+
+Prerequisites:
 
 - .NET 10 SDK
 - Node.js 20+
-- SQL Server (or SQL Server Express)
+- Supabase project (or PostgreSQL)
+- Optional: SQL Server instance for reporting sync
 
-### Backend Setup
+Backend:
 
-1. Navigate to the API directory:
-   ```bash
-   cd ApprovalDemo/api
-   ```
-
-2. Restore dependencies:
-   ```bash
-   dotnet restore
-   ```
-
-3. Set up the database:
-   ```bash
-   # Run the database setup scripts in order:
-   # 1. db_setup.sql
-   # 2. seed_data.sql
-   ```
-
-4. Run the API:
-   ```bash
-   dotnet run
-   ```
-
-The API will be available at `https://localhost:5001`
-
-### Frontend Setup
-
-1. Navigate to the UI directory:
-   ```bash
-   cd ApprovalDemo/ui
-   ```
-
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
-
-3. Run the development server:
-   ```bash
-   npm start
-   ```
-
-The frontend will be available at `http://localhost:4200`
-
-## 🚀 Deployment
-
-### GitHub Pages (Frontend Only)
-
-The frontend is automatically deployed to GitHub Pages on every push to the main branch via GitHub Actions.
-
-### Backend Deployment
-
-The .NET API cannot run on GitHub Pages. For production deployment, consider:
-
-- **Azure App Service**
-- **Azure Container Apps**
-- **AWS Elastic Beanstalk**
-- **Docker containers**
-
-## 📁 Project Structure
-
+```bash
+cd ApprovalDemo/api
+dotnet restore
+dotnet run
 ```
+
+Frontend:
+
+```bash
+cd ApprovalDemo/ui
+npm install
+npm start
+```
+
+## Database Setup
+
+- Primary schema (Supabase/PostgreSQL): ApprovalDemo/api/supabase_schema.sql
+- MSSQL mirror schema (optional): ApprovalDemo/api/mssql_reporting_schema.sql
+
+## Environment Variables
+
+Required for API:
+
+- SUPABASE_CONNECTION_STRING
+
+Optional for UI/API integration:
+
+- FRONTEND_URL
+- FRONTEND_URLS
+- ALLOW_VERCEL_PREVIEWS
+- VERCEL_PROJECT_SLUG
+
+Optional for MSSQL sync:
+
+- MSSQL_CONNECTION_STRING
+
+## Project Structure
+
+```text
 ApprovalDemo/
-├── api/                    # .NET ASP.NET Core API
-│   ├── Controllers/        # API controllers
-│   ├── Data/              # Data access layer
-│   ├── Models/            # Data models
-│   └── Program.cs         # Application entry point
-└── ui/                    # Angular frontend
-    ├── src/
-    │   ├── app/
-    │   │   ├── components/    # Angular components
-    │   │   ├── models/        # TypeScript models
-    │   │   └── services/      # Angular services
-    │   └── index.html
-    └── dist/              # Build output (GitHub Pages)
+  api/
+    Controllers/
+    Data/
+    Models/
+    Services/
+    Program.cs
+    supabase_schema.sql
+    mssql_reporting_schema.sql
+  ui/
+    src/
+      app/
+        components/
+        models/
+        services/
 ```
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Submit a pull request
-
-## 📄 License
-
-This project is licensed under the MIT License.
