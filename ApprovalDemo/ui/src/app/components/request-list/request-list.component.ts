@@ -13,12 +13,11 @@ import { ApprovalRequest } from '../../models/approval.model';
       <div class="aurora"></div>
       <div class="grain"></div>
 
-      <div class="container">
-        <header class="header">
-          <div>
-            <p class="eyebrow">Operations Console</p>
-            <h1>Pending Approval Requests</h1>
-            <p class="subtitle">Track, review, and resolve incoming requests quickly.</p>
+      <div class="dashboard-shell">
+        <header class="dashboard-header">
+          <div class="brand-wrap">
+            <span class="brand-dot"></span>
+            <h1 class="brand-title">IT SW Training manual</h1>
           </div>
 
           <div class="header-actions">
@@ -32,40 +31,54 @@ import { ApprovalRequest } from '../../models/approval.model';
           </div>
         </header>
 
-        <div *ngIf="loading" class="loader-box">
-          <div class="spinner"></div>
-          <p>Loading requests from API...</p>
-        </div>
+        <div class="dashboard-body">
+          <aside class="sidebar" aria-label="Sidebar Navigation">
+            <p class="sidebar-label">Training Tasks</p>
+            <a href="#" class="sidebar-link active" aria-current="page">Task 2</a>
+          </aside>
 
-        <div *ngIf="!loading" class="table-wrap">
-          <table class="approval-table">
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Title</th>
-                <th>Requested By</th>
-                <th>Created At</th>
-                <th class="actions-col">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr *ngFor="let request of requests">
-                <td><span class="id-pill">#{{ request.id }}</span></td>
-                <td class="title-cell">{{ request.title }}</td>
-                <td>{{ request.requestedBy }}</td>
-                <td>{{ request.createdAt | date:'medium' }}</td>
-                <td>
-                  <div class="action-group">
-                    <button class="btn btn-approve" (click)="approve(request.id)">Approve</button>
-                    <button class="btn btn-reject" (click)="selectForRejection(request.id)">Reject</button>
-                  </div>
-                </td>
-              </tr>
-              <tr *ngIf="requests.length === 0">
-                <td colspan="5" class="no-data">No pending requests found. Seed data and hit refresh.</td>
-              </tr>
-            </tbody>
-          </table>
+          <main class="content-panel">
+            <header class="content-header">
+              <p class="eyebrow">Operations Console</p>
+              <p class="subtitle">Track, review, and resolve incoming requests quickly.</p>
+            </header>
+
+            <div *ngIf="loading" class="loader-box">
+              <div class="spinner"></div>
+              <p>Loading requests from API...</p>
+            </div>
+
+            <div *ngIf="!loading" class="table-wrap">
+              <table class="approval-table">
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Title</th>
+                    <th>Requested By</th>
+                    <th>Created At</th>
+                    <th class="actions-col">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr *ngFor="let request of requests">
+                    <td><span class="id-pill">#{{ request.id }}</span></td>
+                    <td class="title-cell">{{ request.title }}</td>
+                    <td>{{ request.requestedBy }}</td>
+                    <td>{{ request.createdAt | date:'medium' }}</td>
+                    <td>
+                      <div class="action-group">
+                        <button class="btn btn-approve" (click)="approve(request.id)">Approve</button>
+                        <button class="btn btn-reject" (click)="selectForRejection(request.id)">Reject</button>
+                      </div>
+                    </td>
+                  </tr>
+                  <tr *ngIf="requests.length === 0">
+                    <td colspan="5" class="no-data">No pending requests found. Seed data and hit refresh.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </main>
         </div>
       </div>
 
