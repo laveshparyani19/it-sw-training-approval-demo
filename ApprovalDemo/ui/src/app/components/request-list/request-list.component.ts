@@ -43,6 +43,25 @@ import { ApprovalRequest } from '../../models/approval.model';
               <p class="subtitle">Track, review, and resolve incoming requests quickly.</p>
             </header>
 
+            <div *ngIf="!loading" class="table-controls">
+              <div class="search-box">
+                <input
+                  type="text"
+                  [(ngModel)]="searchTerm"
+                  (ngModelChange)="onSearchChange()"
+                  placeholder="Search by title, requester, or ID"
+                  aria-label="Search approval requests"
+                />
+              </div>
+
+              <div class="control-right">
+                <label for="page-size">Rows</label>
+                <select id="page-size" [(ngModel)]="pageSize" (ngModelChange)="onPageSizeChange()">
+                  <option *ngFor="let size of pageSizeOptions" [ngValue]="size">{{ size }}</option>
+                </select>
+              </div>
+            </div>
+
             <div *ngIf="loading" class="loader-box">
               <div class="spinner"></div>
               <p>Loading requests from API...</p>
@@ -60,7 +79,7 @@ import { ApprovalRequest } from '../../models/approval.model';
                   </tr>
                 </thead>
                 <tbody>
-                  <tr *ngFor="let request of requests">
+                  <tr *ngFor="let request of paginatedRequests">
                     <td><span class="id-pill">#{{ request.id }}</span></td>
                     <td class="title-cell">{{ request.title }}</td>
                     <td>{{ request.requestedBy }}</td>
@@ -72,11 +91,23 @@ import { ApprovalRequest } from '../../models/approval.model';
                       </div>
                     </td>
                   </tr>
-                  <tr *ngIf="requests.length === 0">
-                    <td colspan="5" class="no-data">No pending requests found. Seed data and hit refresh.</td>
+                  <tr *ngIf="filteredRequests.length === 0">
+                    <td colspan="5" class="no-data">No matching requests found. Try a different search.</td>
                   </tr>
                 </tbody>
               </table>
+            </div>
+
+            <div *ngIf="!loading && filteredRequests.length > 0" class="pagination-row">
+              <p class="page-summary">
+                Showing {{ pageStart }}-{{ pageEnd }} of {{ filteredRequests.length }}
+              </p>
+
+              <div class="page-actions">
+                <button class="btn btn-page" (click)="goToPreviousPage()" [disabled]="currentPage === 1">Previous</button>
+                <span class="page-indicator">Page {{ currentPage }} / {{ totalPages }}</span>
+                <button class="btn btn-page" (click)="goToNextPage()" [disabled]="currentPage === totalPages">Next</button>
+              </div>
             </div>
           </main>
         </div>
@@ -107,10 +138,47 @@ export class RequestListComponent implements OnInit {
   loading = true;
   selectedId: number | null = null;
   rejectReason = '';
+  searchTerm = '';
+  currentPage = 1;
+  pageSize = 10;
+  pageSizeOptions = [5, 10, 20, 50];
   showToast = false;
   toastMessage = '';
   toastType: 'success' | 'error' | 'info' = 'info';
   private toastTimerId: number | null = null;
+
+  get filteredRequests(): ApprovalRequest[] {
+    const term = this.searchTerm.trim().toLowerCase();
+    if (!term) {
+      return this.requests;
+    }
+
+    return this.requests.filter((request) =>
+      request.title.toLowerCase().includes(term)
+      || request.requestedBy.toLowerCase().includes(term)
+      || request.id.toString().includes(term)
+    );
+  }
+
+  get totalPages(): number {
+    return Math.max(1, Math.ceil(this.filteredRequests.length / this.pageSize));
+  }
+
+  get paginatedRequests(): ApprovalRequest[] {
+    const start = (this.currentPage - 1) * this.pageSize;
+    return this.filteredRequests.slice(start, start + this.pageSize);
+  }
+
+  get pageStart(): number {
+    if (this.filteredRequests.length === 0) {
+      return 0;
+    }
+    return (this.currentPage - 1) * this.pageSize + 1;
+  }
+
+  get pageEnd(): number {
+    return Math.min(this.currentPage * this.pageSize, this.filteredRequests.length);
+  }
 
   constructor(
     private approvalService: ApprovalService,
@@ -130,6 +198,7 @@ export class RequestListComponent implements OnInit {
       next: (data) => {
         console.log('Data received:', data);
         this.requests = data;
+        this.currentPage = 1;
         this.loading = false;
         this.cdr.detectChanges();
       },
@@ -143,6 +212,30 @@ export class RequestListComponent implements OnInit {
         console.log('Request complete');
       }
     });
+  }
+
+  onSearchChange(): void {
+    this.currentPage = 1;
+    this.cdr.detectChanges();
+  }
+
+  onPageSizeChange(): void {
+    this.currentPage = 1;
+    this.cdr.detectChanges();
+  }
+
+  goToPreviousPage(): void {
+    if (this.currentPage > 1) {
+      this.currentPage -= 1;
+      this.cdr.detectChanges();
+    }
+  }
+
+  goToNextPage(): void {
+    if (this.currentPage < this.totalPages) {
+      this.currentPage += 1;
+      this.cdr.detectChanges();
+    }
   }
 
   approve(id: number): void {
