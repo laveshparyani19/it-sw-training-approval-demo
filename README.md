@@ -1,78 +1,70 @@
 # IT SW Training Approval Demo
 
-Full-stack training project implementing an approval workflow with Approve and Reject actions using ASP.NET Core API and Angular dashboard UI.
+A production-style training project for approval workflows, built with ASP.NET Core Web API and Angular. The solution demonstrates request review operations, modern dashboard UX, and optional cross-database synchronization.
 
-## Live URLs
+## Overview
 
-- Frontend (Vercel): https://it-sw-training-approval-demo.vercel.app
-- Backend API (Render): https://it-sw-training-approval-backend.onrender.com
+This project was created as part of a corporate training assignment:
 
-## Training Task Mapping
+Create a form with Approve and Reject actions in ASP.NET.
 
-Original task: Create form with approve and reject button in ASP.NET.
+Delivered implementation includes:
 
-Implemented:
-- Request listing form-style workflow with Approve and Reject actions
-- ASP.NET API endpoints for create, approve, reject, and list operations
-- Rejection reason modal and validation
-- Dashboard UI with search and pagination
+- End-to-end approve and reject flow with API validation
+- Dashboard UI for request management
+- Rejection reason capture and feedback notifications
+- Search and pagination for operational usability
+- Supabase as primary datastore with optional MSSQL reporting sync
 
-## Features
+## Live Environments
 
-- Approve and reject actions with validation
-- Pending request listing with modern dashboard layout
-- Search and pagination on request table
-- Supabase PostgreSQL as primary data store
-- Optional MSSQL reporting mirror sync worker
-- Manual sync and reconciliation endpoints
+[![Frontend - Vercel](https://img.shields.io/badge/Frontend-Vercel-111111?style=for-the-badge&logo=vercel)](https://it-sw-training-approval-demo.vercel.app)
+[![Backend API - Render](https://img.shields.io/badge/Backend%20API-Render-46E3B7?style=for-the-badge&logo=render&logoColor=0A0A0A)](https://it-sw-training-approval-backend.onrender.com)
 
-## Tech Stack
+## Key Features
+
+- Approval request listing with action controls
+- Approve and reject endpoints with business rule checks
+- Search by ID, title, and requester
+- Client-side pagination and page size controls
+- CORS handling for dynamic Vercel preview deployments
+- Optional Supabase-to-MSSQL sync worker with:
+  - Watermark-based incremental sync
+  - Upsert semantics
+  - Retry and dead-letter logging
+  - Reconciliation reporting
+
+## Technical Architecture
 
 - Backend: .NET 10 ASP.NET Core Web API
-- Frontend: Angular 21 (standalone components)
-- Primary DB: Supabase PostgreSQL (Npgsql)
-- Optional Reporting DB: MSSQL (Microsoft.Data.SqlClient)
+- Frontend: Angular 21 (standalone components, SCSS)
+- Primary Database: Supabase PostgreSQL (Npgsql)
+- Optional Reporting Database: SQL Server (Microsoft.Data.SqlClient)
 - Hosting: Render (API), Vercel (UI)
 
-## Repository About And Topics (GitHub)
+## API Surface
 
-Use this for GitHub About:
-
-Training approval workflow dashboard with ASP.NET Core API and Angular UI, featuring approve/reject actions, search, pagination, and optional Supabase-to-MSSQL sync.
-
-Suggested Topics:
-
-- aspnet-core
-- dotnet
-- angular
-- typescript
-- webapi
-- approval-workflow
-- dashboard
-- supabase
-- postgresql
-- mssql
-- render
-- vercel
-
-## API Endpoints
+Approval operations:
 
 - GET /api/approval-requests/pending
 - GET /api/approval-requests/{id}
 - POST /api/approval-requests
 - POST /api/approval-requests/{id}/approve
 - POST /api/approval-requests/{id}/reject
+
+Sync operations:
+
 - POST /api/sync/run
 - POST /api/sync/reconcile
 
-## Local Development
+## Local Setup
 
 Prerequisites:
 
 - .NET 10 SDK
 - Node.js 20+
-- Supabase project (or PostgreSQL)
-- Optional: SQL Server instance for reporting sync
+- Access to a Supabase project (or compatible PostgreSQL)
+- Optional SQL Server instance for reporting sync tests
 
 Backend:
 
@@ -90,25 +82,27 @@ npm install
 npm start
 ```
 
-## Database Setup
+## Database Setup Scripts
 
-- Primary schema (Supabase/PostgreSQL): ApprovalDemo/api/supabase_schema.sql
-- MSSQL mirror schema (optional): ApprovalDemo/api/mssql_reporting_schema.sql
+- Supabase schema and seed script:
+  - ApprovalDemo/api/supabase_schema.sql
+- MSSQL reporting mirror schema:
+  - ApprovalDemo/api/mssql_reporting_schema.sql
 
 ## Environment Variables
 
-Required for API:
+Required:
 
 - SUPABASE_CONNECTION_STRING
 
-Optional for UI/API integration:
+Optional UI/API integration:
 
 - FRONTEND_URL
 - FRONTEND_URLS
 - ALLOW_VERCEL_PREVIEWS
 - VERCEL_PROJECT_SLUG
 
-Optional for MSSQL sync:
+Optional sync configuration:
 
 - MSSQL_CONNECTION_STRING
 
@@ -131,3 +125,4 @@ ApprovalDemo/
         models/
         services/
 ```
+
