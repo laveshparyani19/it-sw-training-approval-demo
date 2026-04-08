@@ -143,7 +143,7 @@ import { ApprovalRequest, StudentDirectoryItem } from '../../models/approval.mod
                 <div class="student-filter-item">
                   <label for="section-select">Select Section(s)</label>
                   <div class="multi-dropdown" (click)="$event.stopPropagation()">
-                    <button type="button" id="section-select" class="multi-dropdown-toggle" (click)="toggleSectionDropdown()">
+                    <button type="button" id="section-select" class="multi-dropdown-toggle" [disabled]="selectedGrades.length === 0" (click)="toggleSectionDropdown()">
                       <span>{{ sectionSelectionSummary }}</span>
                       <span class="caret">▾</span>
                     </button>
@@ -167,6 +167,7 @@ import { ApprovalRequest, StudentDirectoryItem } from '../../models/approval.mod
                     type="text"
                     [(ngModel)]="studentSearch"
                     (ngModelChange)="onStudentSearchChanged()"
+                    [disabled]="selectedGrades.length === 0"
                     placeholder="Name or student code"
                     aria-label="Search students"
                   />
@@ -177,7 +178,7 @@ import { ApprovalRequest, StudentDirectoryItem } from '../../models/approval.mod
                 <div class="student-filter-item student-picker-field">
                   <label for="student-picker">Select Student(s)</label>
                   <div class="multi-dropdown" (click)="$event.stopPropagation()">
-                    <button type="button" id="student-picker" class="multi-dropdown-toggle" (click)="toggleStudentDropdown()">
+                    <button type="button" id="student-picker" class="multi-dropdown-toggle" [disabled]="selectedGrades.length === 0" (click)="toggleStudentDropdown()">
                       <span>{{ studentSelectionSummary }}</span>
                       <span class="caret">▾</span>
                     </button>
@@ -194,7 +195,7 @@ import { ApprovalRequest, StudentDirectoryItem } from '../../models/approval.mod
                     </div>
                   </div>
                 </div>
-                <button class="btn btn-approve" (click)="addPendingStudents()" [disabled]="pendingStudentIds.length === 0">Add Selected</button>
+                <button class="btn btn-approve" (click)="addPendingStudents()" [disabled]="selectedGrades.length === 0 || pendingStudentIds.length === 0">Add Selected</button>
               </div>
 
               <div *ngIf="studentLoading" class="loader-box">
@@ -218,7 +219,11 @@ import { ApprovalRequest, StudentDirectoryItem } from '../../models/approval.mod
                 </article>
               </div>
 
-              <p *ngIf="!studentLoading && studentResults.length === 0" class="no-data">
+              <p *ngIf="!studentLoading && selectedGrades.length === 0" class="no-data">
+                Select at least one grade to load sections and students.
+              </p>
+
+              <p *ngIf="!studentLoading && selectedGrades.length > 0 && studentResults.length === 0" class="no-data">
                 No students match your filters.
               </p>
 
@@ -357,8 +362,6 @@ export class RequestListComponent implements OnInit {
     console.log('RequestListComponent initialized');
     this.loadRequests();
     this.loadGrades();
-    this.loadSections();
-    this.loadStudents();
   }
 
   switchTask(task: 'task2' | 'task9'): void {
@@ -492,6 +495,19 @@ export class RequestListComponent implements OnInit {
 
   onGradesChanged(): void {
     this.selectedSections = [];
+    this.pendingStudentIds = [];
+
+    if (this.selectedGrades.length === 0) {
+      this.sectionOptions = [];
+      this.studentSearch = '';
+      this.studentResults = [];
+      this.studentTotal = 0;
+      this.sectionDropdownOpen = false;
+      this.studentDropdownOpen = false;
+      this.cdr.detectChanges();
+      return;
+    }
+
     this.loadSections();
     this.reloadStudentsFromStart();
   }
@@ -556,12 +572,20 @@ export class RequestListComponent implements OnInit {
   }
 
   toggleSectionDropdown(): void {
+    if (this.selectedGrades.length === 0) {
+      return;
+    }
+
     this.sectionDropdownOpen = !this.sectionDropdownOpen;
     this.gradeDropdownOpen = false;
     this.studentDropdownOpen = false;
   }
 
   toggleStudentDropdown(): void {
+    if (this.selectedGrades.length === 0) {
+      return;
+    }
+
     this.studentDropdownOpen = !this.studentDropdownOpen;
     this.gradeDropdownOpen = false;
     this.sectionDropdownOpen = false;
@@ -608,6 +632,14 @@ export class RequestListComponent implements OnInit {
   }
 
   onStudentSearchChanged(): void {
+    if (this.selectedGrades.length === 0) {
+      this.studentResults = [];
+      this.studentTotal = 0;
+      this.pendingStudentIds = [];
+      this.cdr.detectChanges();
+      return;
+    }
+
     if (this.studentSearchDebounceId !== null) {
       window.clearTimeout(this.studentSearchDebounceId);
     }
@@ -737,6 +769,13 @@ export class RequestListComponent implements OnInit {
   }
 
   private loadSections(): void {
+    if (this.selectedGrades.length === 0) {
+      this.sectionOptions = [];
+      this.selectedSections = [];
+      this.cdr.detectChanges();
+      return;
+    }
+
     this.approvalService.getSections(this.selectedGrades, '', 100).subscribe({
       next: (data) => {
         this.sectionOptions = data;
@@ -749,6 +788,15 @@ export class RequestListComponent implements OnInit {
   }
 
   private loadStudents(): void {
+    if (this.selectedGrades.length === 0) {
+      this.studentLoading = false;
+      this.studentResults = [];
+      this.studentTotal = 0;
+      this.pendingStudentIds = [];
+      this.cdr.detectChanges();
+      return;
+    }
+
     this.studentLoading = true;
     this.approvalService.getStudents({
       grades: this.selectedGrades,
