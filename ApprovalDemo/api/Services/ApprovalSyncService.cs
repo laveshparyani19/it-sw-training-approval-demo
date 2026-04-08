@@ -29,15 +29,15 @@ namespace ApprovalDemo.Api.Services
             _supabaseConnectionString = configuration.GetConnectionString("DefaultConnection")
                 ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
             _mssqlConnectionString = configuration.GetConnectionString("MssqlReporting");
-            _syncExplicitlyEnabled = string.Equals(
+            _syncExplicitlyEnabled = !string.Equals(
                 Environment.GetEnvironmentVariable("ENABLE_MSSQL_SYNC") ?? configuration["ENABLE_MSSQL_SYNC"],
-                "true",
+                "false",
                 StringComparison.OrdinalIgnoreCase);
 
             _mssqlReady = _syncExplicitlyEnabled && !string.IsNullOrWhiteSpace(_mssqlConnectionString);
             if (!_syncExplicitlyEnabled)
             {
-                _mssqlDisabledReason = "MSSQL sync disabled. Set ENABLE_MSSQL_SYNC=true to enable.";
+                _mssqlDisabledReason = "MSSQL sync disabled. Set ENABLE_MSSQL_SYNC=true or remove ENABLE_MSSQL_SYNC=false.";
             }
             else if (!_mssqlReady)
             {
@@ -56,6 +56,7 @@ namespace ApprovalDemo.Api.Services
                 {
                     await EnsureMssqlSchemaAsync(cancellationToken);
                     await SyncStudentDirectorySnapshotAsync(cancellationToken);
+                    await SynchronizeMirrorDeletesAsync(cancellationToken);
                     _mssqlReady = true;
                     _mssqlDisabledReason = string.Empty;
                 }
@@ -103,6 +104,7 @@ namespace ApprovalDemo.Api.Services
                 if (changedRows.Count == 0)
                 {
                     var studentUpsertsOnNoDelta = await SyncStudentDirectorySnapshotAsync(cancellationToken);
+                    var noDeltaDeletes = await SynchronizeMirrorDeletesAsync(cancellationToken);
                     await MaybeRunDailyReconciliationAsync(cancellationToken);
                     return new SyncRunResult
                     {
@@ -112,7 +114,7 @@ namespace ApprovalDemo.Api.Services
                         Processed = 0,
                         Successful = 0,
                         Failed = 0,
-                        Message = $"No changed approval rows found. StudentDirectory snapshot upserted {studentUpsertsOnNoDelta} rows."
+                        Message = $"No changed approval rows found. StudentDirectory snapshot upserted {studentUpsertsOnNoDelta} rows. Mirror cleanup removed {noDeltaDeletes.approvalDeleted} approval rows and {noDeltaDeletes.studentDeleted} student rows."
                     };
                 }
 
@@ -142,6 +144,7 @@ namespace ApprovalDemo.Api.Services
                 }
 
                 var studentUpserts = await SyncStudentDirectorySnapshotAsync(cancellationToken);
+                var deleteSync = await SynchronizeMirrorDeletesAsync(cancellationToken);
                 await MaybeRunDailyReconciliationAsync(cancellationToken);
 
                 return new SyncRunResult
@@ -154,7 +157,7 @@ namespace ApprovalDemo.Api.Services
                     Failed = failed,
                     Message = failed > 0
                         ? "Stopped at first failed row. Failed row logged to dead-letter table for review."
-                        : $"Sync completed successfully. StudentDirectory snapshot upserted {studentUpserts} rows."
+                        : $"Sync completed successfully. StudentDirectory snapshot upserted {studentUpserts} rows. Mirror cleanup removed {deleteSync.approvalDeleted} approval rows and {deleteSync.studentDeleted} student rows."
                 };
             }
             finally
@@ -346,6 +349,45 @@ WHEN NOT MATCHED THEN
             command.Parameters.Add("@UpdatedAt", SqlDbType.DateTimeOffset).Value = new DateTimeOffset(DateTime.SpecifyKind(row.UpdatedAtUtc, DateTimeKind.Utc));
 
             await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        private async Task<(int approvalDeleted, int studentDeleted)> SynchronizeMirrorDeletesAsync(CancellationToken cancellationToken)
+        {
+            var approvalSourceIds = await GetSourceIdsAsync(cancellationToken);
+            var approvalTargetIds = await GetTargetIdsAsync(cancellationToken);
+            var approvalStaleIds = approvalTargetIds.Where(id => !approvalSourceIds.Contains(id)).ToArray();
+
+            var studentSourceIds = await GetStudentSourceIdsAsync(cancellationToken);
+            var studentTargetIds = await GetStudentTargetIdsAsync(cancellationToken);
+            var studentStaleIds = studentTargetIds.Where(id => !studentSourceIds.Contains(id)).ToArray();
+
+            await using var connection = new SqlConnection(_mssqlConnectionString);
+            await connection.OpenAsync(cancellationToken);
+
+            var approvalDeleted = await DeleteRowsByIdsAsync(connection, "DELETE FROM dbo.ApprovalRequestMirror WHERE Id = @Id", approvalStaleIds, cancellationToken);
+            var studentDeleted = await DeleteRowsByIdsAsync(connection, "DELETE FROM dbo.StudentDirectoryMirror WHERE Id = @Id", studentStaleIds, cancellationToken);
+
+            return (approvalDeleted, studentDeleted);
+        }
+
+        private static async Task<int> DeleteRowsByIdsAsync(SqlConnection connection, string sql, IReadOnlyCollection<int> ids, CancellationToken cancellationToken)
+        {
+            if (ids.Count == 0)
+            {
+                return 0;
+            }
+
+            var deleted = 0;
+            await using var command = new SqlCommand(sql, connection);
+            var parameter = command.Parameters.Add("@Id", SqlDbType.Int);
+
+            foreach (var id in ids)
+            {
+                parameter.Value = id;
+                deleted += await command.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            return deleted;
         }
 
         private async Task UpsertRowToMssqlAsync(SyncSourceRow row, CancellationToken cancellationToken)
@@ -613,6 +655,42 @@ VALUES (@SyncName, @EntityId, @OperationId, @Payload::jsonb, @Error, @AttemptCou
             await connection.OpenAsync(cancellationToken);
 
             const string sql = "SELECT Id FROM dbo.ApprovalRequestMirror";
+            await using var command = new SqlCommand(sql, connection);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                ids.Add(reader.GetInt32(0));
+            }
+
+            return ids;
+        }
+
+        private async Task<HashSet<int>> GetStudentSourceIdsAsync(CancellationToken cancellationToken)
+        {
+            var ids = new HashSet<int>();
+            await using var connection = new NpgsqlConnection(_supabaseConnectionString);
+            await connection.OpenAsync(cancellationToken);
+
+            const string sql = "SELECT \"Id\" FROM \"StudentDirectory\"";
+            await using var command = new NpgsqlCommand(sql, connection);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                ids.Add(reader.GetInt32(0));
+            }
+
+            return ids;
+        }
+
+        private async Task<HashSet<int>> GetStudentTargetIdsAsync(CancellationToken cancellationToken)
+        {
+            var ids = new HashSet<int>();
+            await using var connection = new SqlConnection(_mssqlConnectionString);
+            await connection.OpenAsync(cancellationToken);
+
+            const string sql = "SELECT Id FROM dbo.StudentDirectoryMirror";
             await using var command = new SqlCommand(sql, connection);
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
 

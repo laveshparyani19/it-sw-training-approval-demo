@@ -64,10 +64,11 @@ builder.Services.AddSwaggerGen();
 builder.Services.AddScoped<ApprovalRepository>();
 builder.Services.AddScoped<StudentRepository>();
 builder.Services.AddSingleton<ApprovalSyncService>();
-var enableMssqlSync = string.Equals(
+var enableMssqlSync = !string.Equals(
     Environment.GetEnvironmentVariable("ENABLE_MSSQL_SYNC") ?? builder.Configuration["ENABLE_MSSQL_SYNC"],
-    "true",
-    StringComparison.OrdinalIgnoreCase);
+    "false",
+    StringComparison.OrdinalIgnoreCase)
+    && !string.IsNullOrWhiteSpace(mssqlConnectionString);
 if (enableMssqlSync)
 {
     builder.Services.AddHostedService<ApprovalSyncHostedService>();
