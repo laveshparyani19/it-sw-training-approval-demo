@@ -121,43 +121,17 @@ import { ApprovalRequest, StudentDirectoryItem } from '../../models/approval.mod
             <ng-container *ngIf="activeTask === 'task9'">
               <div class="student-filters">
                 <div class="student-filter-item">
-                  <label>Select Grade(s)</label>
-                  <div class="filter-box">
-                    <div class="filter-box-header">
-                      <span>{{ selectedGrades.length === 0 ? 'All grades' : (selectedGrades.length + ' selected') }}</span>
-                      <button type="button" class="mini-action" (click)="clearGrades()" [disabled]="selectedGrades.length === 0">Clear</button>
-                    </div>
-                    <div class="filter-options">
-                      <button
-                        type="button"
-                        class="filter-option"
-                        *ngFor="let grade of gradeOptions"
-                        [class.active]="isGradeSelected(grade)"
-                        (click)="toggleGrade(grade, $event)">
-                        {{ grade }}
-                      </button>
-                    </div>
-                  </div>
+                  <label for="grade-select">Select Grade(s)</label>
+                  <select id="grade-select" multiple size="6" [(ngModel)]="selectedGrades" (ngModelChange)="onGradesChanged()">
+                    <option *ngFor="let grade of gradeOptions" [ngValue]="grade">{{ grade }}</option>
+                  </select>
                 </div>
 
                 <div class="student-filter-item">
-                  <label>Select Section(s)</label>
-                  <div class="filter-box">
-                    <div class="filter-box-header">
-                      <span>{{ selectedSections.length === 0 ? 'All sections' : (selectedSections.length + ' selected') }}</span>
-                      <button type="button" class="mini-action" (click)="clearSections()" [disabled]="selectedSections.length === 0">Clear</button>
-                    </div>
-                    <div class="filter-options">
-                      <button
-                        type="button"
-                        class="filter-option"
-                        *ngFor="let section of sectionOptions"
-                        [class.active]="isSectionSelected(section)"
-                        (click)="toggleSection(section, $event)">
-                        {{ section }}
-                      </button>
-                    </div>
-                  </div>
+                  <label for="section-select">Select Section(s)</label>
+                  <select id="section-select" multiple size="6" [(ngModel)]="selectedSections" (ngModelChange)="onSectionsChanged()">
+                    <option *ngFor="let section of sectionOptions" [ngValue]="section">{{ section }}</option>
+                  </select>
                 </div>
 
                 <div class="student-search-box">
@@ -175,15 +149,14 @@ import { ApprovalRequest, StudentDirectoryItem } from '../../models/approval.mod
 
               <div class="student-picker-row">
                 <div class="student-filter-item student-picker-field">
-                  <label for="student-picker">Select Student</label>
-                  <select id="student-picker" [(ngModel)]="pendingStudentId">
-                    <option [ngValue]="null">Choose a student</option>
+                  <label for="student-picker">Select Student(s)</label>
+                  <select id="student-picker" multiple size="6" [(ngModel)]="pendingStudentIds">
                     <option *ngFor="let student of selectableStudents" [ngValue]="student.id">
                       {{ student.fullName }} ({{ student.studentCode }}) - {{ student.gradeName }} / {{ student.sectionName }}
                     </option>
                   </select>
                 </div>
-                <button class="btn btn-approve" (click)="addPendingStudent()" [disabled]="pendingStudentId === null">Add Student</button>
+                <button class="btn btn-approve" (click)="addPendingStudents()" [disabled]="pendingStudentIds.length === 0">Add Selected</button>
               </div>
 
               <div *ngIf="studentLoading" class="loader-box">
@@ -291,14 +264,14 @@ export class RequestListComponent implements OnInit {
   studentResults: StudentDirectoryItem[] = [];
   selectedStudents: StudentDirectoryItem[] = [];
   selectedStudentIds = new Set<number>();
-  pendingStudentId: number | null = null;
+  pendingStudentIds: number[] = [];
   studentLoading = false;
   studentPage = 1;
   studentPageSize = 24;
   studentTotal = 0;
   private failedPhotoStudentIds = new Set<number>();
-  private readonly maleAvatar = this.buildAvatarDataUri('#d7ecff', '#1b5f8c', 'M');
-  private readonly femaleAvatar = this.buildAvatarDataUri('#ffe0ee', '#8a2f5a', 'F');
+  private readonly maleAvatar = this.buildAvatarDataUri('#d7ecff', '#1b5f8c');
+  private readonly femaleAvatar = this.buildAvatarDataUri('#ffe0ee', '#8a2f5a');
   private studentSearchDebounceId: number | null = null;
 
   get filteredRequests(): ApprovalRequest[] {
@@ -486,50 +459,6 @@ export class RequestListComponent implements OnInit {
     this.reloadStudentsFromStart();
   }
 
-  isGradeSelected(grade: string): boolean {
-    return this.selectedGrades.includes(grade);
-  }
-
-  toggleGrade(grade: string, event: Event): void {
-    event.preventDefault();
-    if (this.isGradeSelected(grade)) {
-      this.selectedGrades = this.selectedGrades.filter((value) => value !== grade);
-    } else {
-      this.selectedGrades = [...this.selectedGrades, grade];
-    }
-    this.onGradesChanged();
-  }
-
-  clearGrades(): void {
-    if (this.selectedGrades.length === 0) {
-      return;
-    }
-    this.selectedGrades = [];
-    this.onGradesChanged();
-  }
-
-  isSectionSelected(section: string): boolean {
-    return this.selectedSections.includes(section);
-  }
-
-  toggleSection(section: string, event: Event): void {
-    event.preventDefault();
-    if (this.isSectionSelected(section)) {
-      this.selectedSections = this.selectedSections.filter((value) => value !== section);
-    } else {
-      this.selectedSections = [...this.selectedSections, section];
-    }
-    this.onSectionsChanged();
-  }
-
-  clearSections(): void {
-    if (this.selectedSections.length === 0) {
-      return;
-    }
-    this.selectedSections = [];
-    this.onSectionsChanged();
-  }
-
   onStudentSearchChanged(): void {
     if (this.studentSearchDebounceId !== null) {
       window.clearTimeout(this.studentSearchDebounceId);
@@ -590,22 +519,30 @@ export class RequestListComponent implements OnInit {
 
     this.selectedStudentIds.add(student.id);
     this.selectedStudents = [...this.selectedStudents, student];
-    this.pendingStudentId = null;
+    this.pendingStudentIds = this.pendingStudentIds.filter((id) => id !== student.id);
     this.cdr.detectChanges();
   }
 
-  addPendingStudent(): void {
-    if (this.pendingStudentId === null) {
+  addPendingStudents(): void {
+    if (this.pendingStudentIds.length === 0) {
       return;
     }
 
-    const selected = this.studentResults.find((student) => student.id === this.pendingStudentId);
-    if (!selected) {
-      this.showToastMessage('Selected student is not available on this page. Adjust filters and try again.', 'info');
+    const studentsToAdd = this.studentResults.filter((student) => this.pendingStudentIds.includes(student.id));
+    if (studentsToAdd.length === 0) {
+      this.showToastMessage('Selected students are not available on this page. Adjust filters and try again.', 'info');
       return;
     }
 
-    this.addStudent(selected);
+    for (const student of studentsToAdd) {
+      if (!this.selectedStudentIds.has(student.id)) {
+        this.selectedStudentIds.add(student.id);
+        this.selectedStudents = [...this.selectedStudents, student];
+      }
+    }
+
+    this.pendingStudentIds = [];
+    this.cdr.detectChanges();
   }
 
   removeSelected(studentId: number, event: Event): void {
@@ -618,7 +555,7 @@ export class RequestListComponent implements OnInit {
   clearSelectedStudents(): void {
     this.selectedStudentIds.clear();
     this.selectedStudents = [];
-    this.pendingStudentId = null;
+    this.pendingStudentIds = [];
     this.cdr.detectChanges();
   }
 
@@ -676,9 +613,7 @@ export class RequestListComponent implements OnInit {
       next: (result) => {
         this.studentResults = result.items;
         this.studentTotal = result.total;
-        if (this.pendingStudentId !== null && !this.studentResults.some((student) => student.id === this.pendingStudentId)) {
-          this.pendingStudentId = null;
-        }
+        this.pendingStudentIds = this.pendingStudentIds.filter((id) => this.studentResults.some((student) => student.id === id));
         this.studentLoading = false;
         this.cdr.detectChanges();
       },
@@ -706,8 +641,8 @@ export class RequestListComponent implements OnInit {
     return student.id % 2 === 0;
   }
 
-  private buildAvatarDataUri(background: string, foreground: string, label: string): string {
-    const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='96' height='96' viewBox='0 0 96 96'><rect width='96' height='96' rx='48' fill='${background}'/><circle cx='48' cy='34' r='16' fill='${foreground}' opacity='0.22'/><path d='M20 81c0-16 12-26 28-26s28 10 28 26' fill='${foreground}' opacity='0.25'/><text x='48' y='54' text-anchor='middle' font-family='Arial, sans-serif' font-size='22' font-weight='700' fill='${foreground}'>${label}</text></svg>`;
+  private buildAvatarDataUri(background: string, foreground: string): string {
+    const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='96' height='96' viewBox='0 0 96 96'><rect width='96' height='96' rx='48' fill='${background}'/><circle cx='48' cy='34' r='14' fill='${foreground}' opacity='0.25'/><path d='M22 80c2-13 12-21 26-21s24 8 26 21' fill='${foreground}' opacity='0.28'/><circle cx='48' cy='48' r='42' fill='none' stroke='${foreground}' stroke-opacity='0.12' stroke-width='2'/></svg>`;
     return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
   }
 }
