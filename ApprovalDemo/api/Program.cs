@@ -190,8 +190,14 @@ app.MapControllers();
 
 using (var scope = app.Services.CreateScope())
 {
-    var syncService = scope.ServiceProvider.GetRequiredService<ApprovalSyncService>();
-    await syncService.InitializeAsync(CancellationToken.None);
+    var studentRepository = scope.ServiceProvider.GetRequiredService<StudentRepository>();
+    await studentRepository.EnsureSchemaAndSeedAsync(CancellationToken.None);
+
+    if (enableMssqlSync)
+    {
+        var syncService = scope.ServiceProvider.GetRequiredService<ApprovalSyncService>();
+        await syncService.InitializeAsync(CancellationToken.None);
+    }
 }
 
 app.Run();

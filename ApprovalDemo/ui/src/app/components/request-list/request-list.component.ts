@@ -121,18 +121,16 @@ import { ApprovalRequest, StudentDirectoryItem } from '../../models/approval.mod
             <ng-container *ngIf="activeTask === 'task9'">
               <div class="student-filters">
                 <div class="student-filter-item">
-                  <label for="grade-select">Grade</label>
-                  <select id="grade-select" [(ngModel)]="selectedGrade" (ngModelChange)="onGradeChanged()">
-                    <option value="">All Grades</option>
-                    <option *ngFor="let grade of gradeOptions" [value]="grade">{{ grade }}</option>
+                  <label for="grade-select">Select Grade(s)</label>
+                  <select id="grade-select" multiple size="5" [(ngModel)]="selectedGrades" (ngModelChange)="onGradesChanged()">
+                    <option *ngFor="let grade of gradeOptions" [ngValue]="grade">{{ grade }}</option>
                   </select>
                 </div>
 
                 <div class="student-filter-item">
-                  <label for="section-select">Section</label>
-                  <select id="section-select" [(ngModel)]="selectedSection" (ngModelChange)="reloadStudentsFromStart()">
-                    <option value="">All Sections</option>
-                    <option *ngFor="let section of sectionOptions" [value]="section">{{ section }}</option>
+                  <label for="section-select">Select Section(s)</label>
+                  <select id="section-select" multiple size="5" [(ngModel)]="selectedSections" (ngModelChange)="onSectionsChanged()">
+                    <option *ngFor="let section of sectionOptions" [ngValue]="section">{{ section }}</option>
                   </select>
                 </div>
 
@@ -149,6 +147,19 @@ import { ApprovalRequest, StudentDirectoryItem } from '../../models/approval.mod
                 </div>
               </div>
 
+              <div class="student-picker-row">
+                <div class="student-filter-item student-picker-field">
+                  <label for="student-picker">Select Student</label>
+                  <select id="student-picker" [(ngModel)]="pendingStudentId">
+                    <option [ngValue]="null">Choose a student</option>
+                    <option *ngFor="let student of selectableStudents" [ngValue]="student.id">
+                      {{ student.fullName }} ({{ student.studentCode }}) - {{ student.gradeName }} / {{ student.sectionName }}
+                    </option>
+                  </select>
+                </div>
+                <button class="btn btn-approve" (click)="addPendingStudent()" [disabled]="pendingStudentId === null">Add Student</button>
+              </div>
+
               <div *ngIf="studentLoading" class="loader-box">
                 <div class="spinner"></div>
                 <p>Loading students...</p>
@@ -158,13 +169,15 @@ import { ApprovalRequest, StudentDirectoryItem } from '../../models/approval.mod
                 <article
                   *ngFor="let student of studentResults"
                   class="student-card"
-                  [class.selected]="isSelected(student.id)"
-                  (click)="toggleStudent(student)">
+                  [class.selected]="isSelected(student.id)">
                   <img [src]="student.photoUrl || defaultStudentPhoto" [alt]="student.fullName" loading="lazy" />
                   <div>
                     <p class="student-name">{{ student.fullName }}</p>
                     <p class="student-meta">{{ student.studentCode }} | {{ student.gradeName }}-{{ student.sectionName }}</p>
                   </div>
+                  <button class="remove-selected" (click)="addStudent(student, $event)" [disabled]="isSelected(student.id)">
+                    {{ isSelected(student.id) ? 'Added' : 'Add' }}
+                  </button>
                 </article>
               </div>
 
@@ -246,12 +259,13 @@ export class RequestListComponent implements OnInit {
 
   gradeOptions: string[] = [];
   sectionOptions: string[] = [];
-  selectedGrade = '';
-  selectedSection = '';
+  selectedGrades: string[] = [];
+  selectedSections: string[] = [];
   studentSearch = '';
   studentResults: StudentDirectoryItem[] = [];
   selectedStudents: StudentDirectoryItem[] = [];
   selectedStudentIds = new Set<number>();
+  pendingStudentId: number | null = null;
   studentLoading = false;
   studentPage = 1;
   studentPageSize = 24;
@@ -434,9 +448,13 @@ export class RequestListComponent implements OnInit {
     this.cdr.detectChanges();
   }
 
-  onGradeChanged(): void {
-    this.selectedSection = '';
+  onGradesChanged(): void {
+    this.selectedSections = [];
     this.loadSections();
+    this.reloadStudentsFromStart();
+  }
+
+  onSectionsChanged(): void {
     this.reloadStudentsFromStart();
   }
 
@@ -489,15 +507,33 @@ export class RequestListComponent implements OnInit {
     return this.selectedStudentIds.has(studentId);
   }
 
-  toggleStudent(student: StudentDirectoryItem): void {
-    if (this.selectedStudentIds.has(student.id)) {
-      this.selectedStudentIds.delete(student.id);
-      this.selectedStudents = this.selectedStudents.filter((item) => item.id !== student.id);
-    } else {
-      this.selectedStudentIds.add(student.id);
-      this.selectedStudents = [...this.selectedStudents, student];
+  addStudent(student: StudentDirectoryItem, event?: Event): void {
+    if (event) {
+      event.stopPropagation();
     }
+
+    if (this.selectedStudentIds.has(student.id)) {
+      return;
+    }
+
+    this.selectedStudentIds.add(student.id);
+    this.selectedStudents = [...this.selectedStudents, student];
+    this.pendingStudentId = null;
     this.cdr.detectChanges();
+  }
+
+  addPendingStudent(): void {
+    if (this.pendingStudentId === null) {
+      return;
+    }
+
+    const selected = this.studentResults.find((student) => student.id === this.pendingStudentId);
+    if (!selected) {
+      this.showToastMessage('Selected student is not available on this page. Adjust filters and try again.', 'info');
+      return;
+    }
+
+    this.addStudent(selected);
   }
 
   removeSelected(studentId: number, event: Event): void {
@@ -510,7 +546,12 @@ export class RequestListComponent implements OnInit {
   clearSelectedStudents(): void {
     this.selectedStudentIds.clear();
     this.selectedStudents = [];
+    this.pendingStudentId = null;
     this.cdr.detectChanges();
+  }
+
+  get selectableStudents(): StudentDirectoryItem[] {
+    return this.studentResults.filter((student) => !this.selectedStudentIds.has(student.id));
   }
 
   private loadGrades(): void {
@@ -526,7 +567,7 @@ export class RequestListComponent implements OnInit {
   }
 
   private loadSections(): void {
-    this.approvalService.getSections(this.selectedGrade, '', 100).subscribe({
+    this.approvalService.getSections(this.selectedGrades, '', 100).subscribe({
       next: (data) => {
         this.sectionOptions = data;
         this.cdr.detectChanges();
@@ -540,8 +581,8 @@ export class RequestListComponent implements OnInit {
   private loadStudents(): void {
     this.studentLoading = true;
     this.approvalService.getStudents({
-      grade: this.selectedGrade,
-      section: this.selectedSection,
+      grades: this.selectedGrades,
+      sections: this.selectedSections,
       search: this.studentSearch,
       page: this.studentPage,
       pageSize: this.studentPageSize,
@@ -550,6 +591,9 @@ export class RequestListComponent implements OnInit {
       next: (result) => {
         this.studentResults = result.items;
         this.studentTotal = result.total;
+        if (this.pendingStudentId !== null && !this.studentResults.some((student) => student.id === this.pendingStudentId)) {
+          this.pendingStudentId = null;
+        }
         this.studentLoading = false;
         this.cdr.detectChanges();
       },

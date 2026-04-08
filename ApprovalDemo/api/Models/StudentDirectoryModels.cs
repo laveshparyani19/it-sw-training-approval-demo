@@ -17,6 +17,8 @@ namespace ApprovalDemo.Api.Models
     {
         public string? Grade { get; set; }
         public string? Section { get; set; }
+        public string? Grades { get; set; }
+        public string? Sections { get; set; }
         public string? Search { get; set; }
         public bool OnlyActive { get; set; } = true;
 

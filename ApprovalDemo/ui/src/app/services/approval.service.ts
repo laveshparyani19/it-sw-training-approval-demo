@@ -36,29 +36,30 @@ export class ApprovalService {
     return this.http.get<string[]>(`${this.studentApiUrl}/grades?search=${encodeURIComponent(search)}&limit=${limit}`);
   }
 
-  getSections(grade = '', search = '', limit = 50): Observable<string[]> {
+  getSections(grades: string[] = [], search = '', limit = 50): Observable<string[]> {
+    const gradesCsv = encodeURIComponent(grades.join(','));
     return this.http.get<string[]>(
-      `${this.studentApiUrl}/sections?grade=${encodeURIComponent(grade)}&search=${encodeURIComponent(search)}&limit=${limit}`
+      `${this.studentApiUrl}/sections?grades=${gradesCsv}&search=${encodeURIComponent(search)}&limit=${limit}`
     );
   }
 
   getStudents(params: {
-    grade?: string;
-    section?: string;
+    grades?: string[];
+    sections?: string[];
     search?: string;
     page?: number;
     pageSize?: number;
     onlyActive?: boolean;
   }): Observable<PagedResult<StudentDirectoryItem>> {
-    const grade = encodeURIComponent(params.grade ?? '');
-    const section = encodeURIComponent(params.section ?? '');
+    const grades = encodeURIComponent((params.grades ?? []).join(','));
+    const sections = encodeURIComponent((params.sections ?? []).join(','));
     const search = encodeURIComponent(params.search ?? '');
     const page = params.page ?? 1;
     const pageSize = params.pageSize ?? 24;
     const onlyActive = params.onlyActive ?? true;
 
     return this.http.get<PagedResult<StudentDirectoryItem>>(
-      `${this.studentApiUrl}/directory?grade=${grade}&section=${section}&search=${search}&page=${page}&pageSize=${pageSize}&onlyActive=${onlyActive}`
+      `${this.studentApiUrl}/directory?grades=${grades}&sections=${sections}&search=${search}&page=${page}&pageSize=${pageSize}&onlyActive=${onlyActive}`
     );
   }
 

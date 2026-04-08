@@ -435,6 +435,11 @@ h1 {
     font: inherit;
 }
 
+.student-filter-item select[multiple] {
+    min-height: 132px;
+    background: #ffffff;
+}
+
 .student-filter-item select:focus,
 .student-search-box input:focus {
     outline: 2px solid rgba(27, 132, 172, 0.24);
@@ -447,8 +452,22 @@ h1 {
     gap: 12px;
 }
 
-.student-card {
+.student-picker-row {
     display: flex;
+    align-items: end;
+    gap: 10px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+}
+
+.student-picker-field {
+    min-width: 340px;
+    flex: 1;
+}
+
+.student-card {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
     align-items: center;
     gap: 10px;
     border: 1px solid #d5e5ee;
@@ -545,6 +564,11 @@ h1 {
 
 .remove-selected:hover {
     background: #edf6fc;
+}
+
+.student-card .remove-selected:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
 }
 
 .toast {
@@ -730,6 +754,14 @@ textarea:focus {
 
     .student-filters {
         grid-template-columns: 1fr;
+    }
+
+    .student-picker-field {
+        min-width: 0;
+    }
+
+    .student-picker-row .btn {
+        width: 100%;
     }
 
     .selected-card {

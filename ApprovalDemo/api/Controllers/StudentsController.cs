@@ -24,10 +24,17 @@ namespace ApprovalDemo.Api.Controllers
         }
 
         [HttpGet("sections")]
-        public async Task<IActionResult> GetSections([FromQuery] string? grade, [FromQuery] string? search, [FromQuery] int limit = 50, CancellationToken cancellationToken = default)
+        public async Task<IActionResult> GetSections([FromQuery] string? grade, [FromQuery] string? grades, [FromQuery] string? search, [FromQuery] int limit = 50, CancellationToken cancellationToken = default)
         {
             var safeLimit = Math.Clamp(limit, 1, 200);
-            var result = await _repository.GetSectionsAsync(grade, search, safeLimit, cancellationToken);
+            var selectedGrades = (grades ?? grade ?? string.Empty)
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(static value => value.Trim())
+                .Where(static value => !string.IsNullOrWhiteSpace(value))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+
+            var result = await _repository.GetSectionsAsync(selectedGrades, search, safeLimit, cancellationToken);
             return Ok(result);
         }
 
