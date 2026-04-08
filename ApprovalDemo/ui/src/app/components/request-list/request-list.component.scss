@@ -435,22 +435,79 @@ h1 {
     font: inherit;
 }
 
-.student-filter-item select[multiple] {
-    min-height: 132px;
+.multi-dropdown {
+    position: relative;
+}
+
+.multi-dropdown-toggle {
+    width: 100%;
+    border-radius: 10px;
+    border: 1px solid #cfdfe8;
     background: #ffffff;
-    border-color: #c7dae6;
+    color: #1b3645;
+    padding: 9px 12px;
+    font: inherit;
+    text-align: left;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+.multi-dropdown-toggle span:first-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.multi-dropdown-toggle .caret {
+    color: #3c6275;
+    flex-shrink: 0;
+}
+
+.multi-dropdown-menu {
+    position: absolute;
+    z-index: 40;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    max-height: 260px;
+    overflow: auto;
+    border: 1px solid #cfdfe8;
+    border-radius: 10px;
+    background: #ffffff;
+    box-shadow: 0 10px 22px rgba(11, 36, 50, 0.16);
     padding: 6px;
 }
 
-.student-filter-item select[multiple] option {
-    border-radius: 7px;
-    margin: 2px 0;
-    padding: 7px 8px;
+.multi-option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 12px;
+    color: #214658;
 }
 
-.student-filter-item select[multiple] option:checked {
-    background: linear-gradient(135deg, #1f8cb7, #1a7598);
-    color: #ffffff;
+.multi-option:hover {
+    background: #f3f8fc;
+}
+
+.multi-option input {
+    margin: 0;
+}
+
+.student-menu {
+    max-height: 320px;
+}
+
+.multi-empty {
+    margin: 6px 8px;
+    color: #66808d;
+    font-size: 12px;
 }
 
 .student-filter-item select:focus,

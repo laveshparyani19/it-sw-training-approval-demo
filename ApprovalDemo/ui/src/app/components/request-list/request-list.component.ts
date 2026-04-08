@@ -1,4 +1,4 @@
-import { Component, OnInit, ChangeDetectorRef } from '@angular/core';
+import { Component, OnInit, ChangeDetectorRef, HostListener } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApprovalService } from '../../services/approval.service';
@@ -122,16 +122,42 @@ import { ApprovalRequest, StudentDirectoryItem } from '../../models/approval.mod
               <div class="student-filters">
                 <div class="student-filter-item">
                   <label for="grade-select">Select Grade(s)</label>
-                  <select id="grade-select" multiple size="6" [(ngModel)]="selectedGrades" (ngModelChange)="onGradesChanged()">
-                    <option *ngFor="let grade of gradeOptions" [ngValue]="grade">{{ grade }}</option>
-                  </select>
+                  <div class="multi-dropdown" (click)="$event.stopPropagation()">
+                    <button type="button" id="grade-select" class="multi-dropdown-toggle" (click)="toggleGradeDropdown()">
+                      <span>{{ gradeSelectionSummary }}</span>
+                      <span class="caret">▾</span>
+                    </button>
+                    <div class="multi-dropdown-menu" *ngIf="gradeDropdownOpen">
+                      <label class="multi-option">
+                        <input type="checkbox" [checked]="isAllGradesSelected" (change)="toggleAllGrades($event)" />
+                        <span>Check All</span>
+                      </label>
+                      <label class="multi-option" *ngFor="let grade of gradeOptions">
+                        <input type="checkbox" [checked]="selectedGrades.includes(grade)" (change)="toggleGradeSelection(grade, $event)" />
+                        <span>{{ grade }}</span>
+                      </label>
+                    </div>
+                  </div>
                 </div>
 
                 <div class="student-filter-item">
                   <label for="section-select">Select Section(s)</label>
-                  <select id="section-select" multiple size="6" [(ngModel)]="selectedSections" (ngModelChange)="onSectionsChanged()">
-                    <option *ngFor="let section of sectionOptions" [ngValue]="section">{{ section }}</option>
-                  </select>
+                  <div class="multi-dropdown" (click)="$event.stopPropagation()">
+                    <button type="button" id="section-select" class="multi-dropdown-toggle" (click)="toggleSectionDropdown()">
+                      <span>{{ sectionSelectionSummary }}</span>
+                      <span class="caret">▾</span>
+                    </button>
+                    <div class="multi-dropdown-menu" *ngIf="sectionDropdownOpen">
+                      <label class="multi-option">
+                        <input type="checkbox" [checked]="isAllSectionsSelected" (change)="toggleAllSections($event)" />
+                        <span>Check All</span>
+                      </label>
+                      <label class="multi-option" *ngFor="let section of sectionOptions">
+                        <input type="checkbox" [checked]="selectedSections.includes(section)" (change)="toggleSectionSelection(section, $event)" />
+                        <span>{{ section }}</span>
+                      </label>
+                    </div>
+                  </div>
                 </div>
 
                 <div class="student-search-box">
@@ -150,11 +176,23 @@ import { ApprovalRequest, StudentDirectoryItem } from '../../models/approval.mod
               <div class="student-picker-row">
                 <div class="student-filter-item student-picker-field">
                   <label for="student-picker">Select Student(s)</label>
-                  <select id="student-picker" multiple size="6" [(ngModel)]="pendingStudentIds">
-                    <option *ngFor="let student of selectableStudents" [ngValue]="student.id">
-                      {{ student.fullName }} ({{ student.studentCode }}) - {{ student.gradeName }} / {{ student.sectionName }}
-                    </option>
-                  </select>
+                  <div class="multi-dropdown" (click)="$event.stopPropagation()">
+                    <button type="button" id="student-picker" class="multi-dropdown-toggle" (click)="toggleStudentDropdown()">
+                      <span>{{ studentSelectionSummary }}</span>
+                      <span class="caret">▾</span>
+                    </button>
+                    <div class="multi-dropdown-menu student-menu" *ngIf="studentDropdownOpen">
+                      <label class="multi-option" *ngIf="selectableStudents.length > 0">
+                        <input type="checkbox" [checked]="isAllStudentsSelected" (change)="toggleAllStudents($event)" />
+                        <span>Check All</span>
+                      </label>
+                      <label class="multi-option" *ngFor="let student of selectableStudents">
+                        <input type="checkbox" [checked]="pendingStudentIds.includes(student.id)" (change)="toggleStudentSelection(student.id, $event)" />
+                        <span>{{ student.fullName }} ({{ student.studentCode }})</span>
+                      </label>
+                      <p class="multi-empty" *ngIf="selectableStudents.length === 0">No students available</p>
+                    </div>
+                  </div>
                 </div>
                 <button class="btn btn-approve" (click)="addPendingStudents()" [disabled]="pendingStudentIds.length === 0">Add Selected</button>
               </div>
@@ -265,6 +303,9 @@ export class RequestListComponent implements OnInit {
   selectedStudents: StudentDirectoryItem[] = [];
   selectedStudentIds = new Set<number>();
   pendingStudentIds: number[] = [];
+  gradeDropdownOpen = false;
+  sectionDropdownOpen = false;
+  studentDropdownOpen = false;
   studentLoading = false;
   studentPage = 1;
   studentPageSize = 24;
@@ -457,6 +498,113 @@ export class RequestListComponent implements OnInit {
 
   onSectionsChanged(): void {
     this.reloadStudentsFromStart();
+  }
+
+  @HostListener('document:click')
+  closeDropdownsOnOutsideClick(): void {
+    this.gradeDropdownOpen = false;
+    this.sectionDropdownOpen = false;
+    this.studentDropdownOpen = false;
+  }
+
+  get gradeSelectionSummary(): string {
+    if (this.selectedGrades.length === 0) {
+      return 'Select grade';
+    }
+    return this.selectedGrades.join(', ');
+  }
+
+  get sectionSelectionSummary(): string {
+    if (this.selectedSections.length === 0) {
+      return 'Select section';
+    }
+    return this.selectedSections.join(', ');
+  }
+
+  get studentSelectionSummary(): string {
+    if (this.pendingStudentIds.length === 0) {
+      return 'Select student';
+    }
+
+    const selectedNames = this.selectableStudents
+      .filter((student) => this.pendingStudentIds.includes(student.id))
+      .map((student) => student.fullName);
+
+    if (selectedNames.length === 0) {
+      return `${this.pendingStudentIds.length} selected`;
+    }
+
+    return selectedNames.join(', ');
+  }
+
+  get isAllGradesSelected(): boolean {
+    return this.gradeOptions.length > 0 && this.selectedGrades.length === this.gradeOptions.length;
+  }
+
+  get isAllSectionsSelected(): boolean {
+    return this.sectionOptions.length > 0 && this.selectedSections.length === this.sectionOptions.length;
+  }
+
+  get isAllStudentsSelected(): boolean {
+    return this.selectableStudents.length > 0 && this.pendingStudentIds.length === this.selectableStudents.length;
+  }
+
+  toggleGradeDropdown(): void {
+    this.gradeDropdownOpen = !this.gradeDropdownOpen;
+    this.sectionDropdownOpen = false;
+    this.studentDropdownOpen = false;
+  }
+
+  toggleSectionDropdown(): void {
+    this.sectionDropdownOpen = !this.sectionDropdownOpen;
+    this.gradeDropdownOpen = false;
+    this.studentDropdownOpen = false;
+  }
+
+  toggleStudentDropdown(): void {
+    this.studentDropdownOpen = !this.studentDropdownOpen;
+    this.gradeDropdownOpen = false;
+    this.sectionDropdownOpen = false;
+  }
+
+  toggleAllGrades(event: Event): void {
+    const checked = (event.target as HTMLInputElement).checked;
+    this.selectedGrades = checked ? [...this.gradeOptions] : [];
+    this.onGradesChanged();
+  }
+
+  toggleGradeSelection(grade: string, event: Event): void {
+    const checked = (event.target as HTMLInputElement).checked;
+    this.selectedGrades = checked
+      ? [...this.selectedGrades, grade]
+      : this.selectedGrades.filter((value) => value !== grade);
+    this.onGradesChanged();
+  }
+
+  toggleAllSections(event: Event): void {
+    const checked = (event.target as HTMLInputElement).checked;
+    this.selectedSections = checked ? [...this.sectionOptions] : [];
+    this.onSectionsChanged();
+  }
+
+  toggleSectionSelection(section: string, event: Event): void {
+    const checked = (event.target as HTMLInputElement).checked;
+    this.selectedSections = checked
+      ? [...this.selectedSections, section]
+      : this.selectedSections.filter((value) => value !== section);
+    this.onSectionsChanged();
+  }
+
+  toggleAllStudents(event: Event): void {
+    const checked = (event.target as HTMLInputElement).checked;
+    this.pendingStudentIds = checked ? this.selectableStudents.map((student) => student.id) : [];
+  }
+
+  toggleStudentSelection(studentId: number, event: Event): void {
+    const checked = (event.target as HTMLInputElement).checked;
+    this.pendingStudentIds = checked
+      ? [...this.pendingStudentIds, studentId]
+      : this.pendingStudentIds.filter((id) => id !== studentId);
   }
 
   onStudentSearchChanged(): void {
