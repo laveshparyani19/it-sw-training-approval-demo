@@ -95,7 +95,7 @@ ORDER BY ""GradeName""
 LIMIT @Limit";
 
             await using var command = new NpgsqlCommand(sql, connection);
-            command.Parameters.AddWithValue("@Search", (object?)Normalize(search) ?? DBNull.Value);
+            command.Parameters.Add("@Search", NpgsqlDbType.Text).Value = (object?)Normalize(search) ?? DBNull.Value;
             command.Parameters.AddWithValue("@Limit", limit);
 
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -126,7 +126,7 @@ LIMIT @Limit";
             await using var command = new NpgsqlCommand(sql, connection);
             command.Parameters.AddWithValue("@GradesEmpty", grades.Count == 0);
             command.Parameters.Add("@Grades", NpgsqlDbType.Array | NpgsqlDbType.Text).Value = grades.ToArray();
-            command.Parameters.AddWithValue("@Search", (object?)Normalize(search) ?? DBNull.Value);
+            command.Parameters.Add("@Search", NpgsqlDbType.Text).Value = (object?)Normalize(search) ?? DBNull.Value;
             command.Parameters.AddWithValue("@Limit", limit);
 
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -250,7 +250,7 @@ ORDER BY ""FullName""";
             command.Parameters.Add("@Grades", NpgsqlDbType.Array | NpgsqlDbType.Text).Value = grades.ToArray();
             command.Parameters.AddWithValue("@SectionsEmpty", sections.Count == 0);
             command.Parameters.Add("@Sections", NpgsqlDbType.Array | NpgsqlDbType.Text).Value = sections.ToArray();
-            command.Parameters.AddWithValue("@Search", (object?)Normalize(query.Search) ?? DBNull.Value);
+            command.Parameters.Add("@Search", NpgsqlDbType.Text).Value = (object?)Normalize(query.Search) ?? DBNull.Value;
             command.Parameters.AddWithValue("@OnlyActive", query.OnlyActive);
             command.Parameters.AddWithValue("@PageSize", query.PageSize);
         }
