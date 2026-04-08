@@ -2,7 +2,7 @@ import { Component, OnInit, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApprovalService } from '../../services/approval.service';
-import { ApprovalRequest } from '../../models/approval.model';
+import { ApprovalRequest, StudentDirectoryItem } from '../../models/approval.model';
 
 @Component({
   selector: 'app-request-list',
@@ -34,15 +34,22 @@ import { ApprovalRequest } from '../../models/approval.model';
         <div class="dashboard-body">
           <aside class="sidebar" aria-label="Sidebar Navigation">
             <p class="sidebar-label">Training Tasks</p>
-            <a href="#" class="sidebar-link active" aria-current="page">Task 2</a>
+            <button class="sidebar-link" [class.active]="activeTask === 'task2'" (click)="switchTask('task2')">Task 2</button>
+            <button class="sidebar-link" [class.active]="activeTask === 'task9'" (click)="switchTask('task9')">Task 9</button>
           </aside>
 
           <main class="content-panel">
-            <header class="content-header">
+            <header class="content-header" *ngIf="activeTask === 'task2'">
               <p class="eyebrow">Operations Console</p>
               <p class="subtitle">Track, review, and resolve incoming requests quickly.</p>
             </header>
 
+            <header class="content-header" *ngIf="activeTask === 'task9'">
+              <p class="eyebrow">Student Observation</p>
+              <p class="subtitle">Select active students by grade/section or direct search, then review selected profiles.</p>
+            </header>
+
+            <ng-container *ngIf="activeTask === 'task2'">
             <div *ngIf="!loading" class="table-controls">
               <div class="search-box">
                 <input
@@ -109,6 +116,94 @@ import { ApprovalRequest } from '../../models/approval.model';
                 <button class="btn btn-page" (click)="goToNextPage()" [disabled]="currentPage === totalPages">Next</button>
               </div>
             </div>
+            </ng-container>
+
+            <ng-container *ngIf="activeTask === 'task9'">
+              <div class="student-filters">
+                <div class="student-filter-item">
+                  <label for="grade-select">Grade</label>
+                  <select id="grade-select" [(ngModel)]="selectedGrade" (ngModelChange)="onGradeChanged()">
+                    <option value="">All Grades</option>
+                    <option *ngFor="let grade of gradeOptions" [value]="grade">{{ grade }}</option>
+                  </select>
+                </div>
+
+                <div class="student-filter-item">
+                  <label for="section-select">Section</label>
+                  <select id="section-select" [(ngModel)]="selectedSection" (ngModelChange)="reloadStudentsFromStart()">
+                    <option value="">All Sections</option>
+                    <option *ngFor="let section of sectionOptions" [value]="section">{{ section }}</option>
+                  </select>
+                </div>
+
+                <div class="student-search-box">
+                  <label for="student-search">Search Student</label>
+                  <input
+                    id="student-search"
+                    type="text"
+                    [(ngModel)]="studentSearch"
+                    (ngModelChange)="onStudentSearchChanged()"
+                    placeholder="Name or student code"
+                    aria-label="Search students"
+                  />
+                </div>
+              </div>
+
+              <div *ngIf="studentLoading" class="loader-box">
+                <div class="spinner"></div>
+                <p>Loading students...</p>
+              </div>
+
+              <div *ngIf="!studentLoading" class="student-grid">
+                <article
+                  *ngFor="let student of studentResults"
+                  class="student-card"
+                  [class.selected]="isSelected(student.id)"
+                  (click)="toggleStudent(student)">
+                  <img [src]="student.photoUrl || defaultStudentPhoto" [alt]="student.fullName" loading="lazy" />
+                  <div>
+                    <p class="student-name">{{ student.fullName }}</p>
+                    <p class="student-meta">{{ student.studentCode }} | {{ student.gradeName }}-{{ student.sectionName }}</p>
+                  </div>
+                </article>
+              </div>
+
+              <p *ngIf="!studentLoading && studentResults.length === 0" class="no-data">
+                No students match your filters.
+              </p>
+
+              <div *ngIf="studentTotal > 0" class="pagination-row">
+                <p class="page-summary">
+                  Showing {{ studentPageStart }}-{{ studentPageEnd }} of {{ studentTotal }} students
+                </p>
+
+                <div class="page-actions">
+                  <button class="btn btn-page" (click)="goToPreviousStudentPage()" [disabled]="studentPage === 1">Previous</button>
+                  <span class="page-indicator">Page {{ studentPage }} / {{ studentTotalPages }}</span>
+                  <button class="btn btn-page" (click)="goToNextStudentPage()" [disabled]="studentPage === studentTotalPages">Next</button>
+                </div>
+              </div>
+
+              <section class="selected-students-panel">
+                <div class="selected-header">
+                  <h3>Selected Students ({{ selectedStudents.length }})</h3>
+                  <button class="btn btn-page" (click)="clearSelectedStudents()" [disabled]="selectedStudents.length === 0">Clear All</button>
+                </div>
+
+                <div class="selected-grid" *ngIf="selectedStudents.length > 0">
+                  <article *ngFor="let student of selectedStudents" class="selected-card">
+                    <img [src]="student.photoUrl || defaultStudentPhoto" [alt]="student.fullName" loading="lazy" />
+                    <div>
+                      <p class="student-name">{{ student.fullName }}</p>
+                      <p class="student-meta">{{ student.studentCode }} | {{ student.gradeName }}-{{ student.sectionName }}</p>
+                    </div>
+                    <button class="remove-selected" (click)="removeSelected(student.id, $event)">Remove</button>
+                  </article>
+                </div>
+
+                <p *ngIf="selectedStudents.length === 0" class="no-data">No students selected yet.</p>
+              </section>
+            </ng-container>
           </main>
         </div>
       </div>
@@ -134,6 +229,8 @@ import { ApprovalRequest } from '../../models/approval.model';
   styleUrl: './request-list.component.scss'
 })
 export class RequestListComponent implements OnInit {
+  activeTask: 'task2' | 'task9' = 'task2';
+
   requests: ApprovalRequest[] = [];
   loading = true;
   selectedId: number | null = null;
@@ -146,6 +243,21 @@ export class RequestListComponent implements OnInit {
   toastMessage = '';
   toastType: 'success' | 'error' | 'info' = 'info';
   private toastTimerId: number | null = null;
+
+  gradeOptions: string[] = [];
+  sectionOptions: string[] = [];
+  selectedGrade = '';
+  selectedSection = '';
+  studentSearch = '';
+  studentResults: StudentDirectoryItem[] = [];
+  selectedStudents: StudentDirectoryItem[] = [];
+  selectedStudentIds = new Set<number>();
+  studentLoading = false;
+  studentPage = 1;
+  studentPageSize = 24;
+  studentTotal = 0;
+  defaultStudentPhoto = 'https://via.placeholder.com/84x84.png?text=Student';
+  private studentSearchDebounceId: number | null = null;
 
   get filteredRequests(): ApprovalRequest[] {
     const term = this.searchTerm.trim().toLowerCase();
@@ -188,6 +300,14 @@ export class RequestListComponent implements OnInit {
   ngOnInit(): void {
     console.log('RequestListComponent initialized');
     this.loadRequests();
+    this.loadGrades();
+    this.loadSections();
+    this.loadStudents();
+  }
+
+  switchTask(task: 'task2' | 'task9'): void {
+    this.activeTask = task;
+    this.cdr.detectChanges();
   }
 
   loadRequests(): void {
@@ -312,5 +432,134 @@ export class RequestListComponent implements OnInit {
     }, 3200);
 
     this.cdr.detectChanges();
+  }
+
+  onGradeChanged(): void {
+    this.selectedSection = '';
+    this.loadSections();
+    this.reloadStudentsFromStart();
+  }
+
+  onStudentSearchChanged(): void {
+    if (this.studentSearchDebounceId !== null) {
+      window.clearTimeout(this.studentSearchDebounceId);
+    }
+
+    this.studentSearchDebounceId = window.setTimeout(() => {
+      this.reloadStudentsFromStart();
+      this.studentSearchDebounceId = null;
+    }, 260);
+  }
+
+  reloadStudentsFromStart(): void {
+    this.studentPage = 1;
+    this.loadStudents();
+  }
+
+  get studentTotalPages(): number {
+    return Math.max(1, Math.ceil(this.studentTotal / this.studentPageSize));
+  }
+
+  get studentPageStart(): number {
+    if (this.studentTotal === 0) {
+      return 0;
+    }
+    return (this.studentPage - 1) * this.studentPageSize + 1;
+  }
+
+  get studentPageEnd(): number {
+    return Math.min(this.studentPage * this.studentPageSize, this.studentTotal);
+  }
+
+  goToPreviousStudentPage(): void {
+    if (this.studentPage > 1) {
+      this.studentPage -= 1;
+      this.loadStudents();
+    }
+  }
+
+  goToNextStudentPage(): void {
+    if (this.studentPage < this.studentTotalPages) {
+      this.studentPage += 1;
+      this.loadStudents();
+    }
+  }
+
+  isSelected(studentId: number): boolean {
+    return this.selectedStudentIds.has(studentId);
+  }
+
+  toggleStudent(student: StudentDirectoryItem): void {
+    if (this.selectedStudentIds.has(student.id)) {
+      this.selectedStudentIds.delete(student.id);
+      this.selectedStudents = this.selectedStudents.filter((item) => item.id !== student.id);
+    } else {
+      this.selectedStudentIds.add(student.id);
+      this.selectedStudents = [...this.selectedStudents, student];
+    }
+    this.cdr.detectChanges();
+  }
+
+  removeSelected(studentId: number, event: Event): void {
+    event.stopPropagation();
+    this.selectedStudentIds.delete(studentId);
+    this.selectedStudents = this.selectedStudents.filter((student) => student.id !== studentId);
+    this.cdr.detectChanges();
+  }
+
+  clearSelectedStudents(): void {
+    this.selectedStudentIds.clear();
+    this.selectedStudents = [];
+    this.cdr.detectChanges();
+  }
+
+  private loadGrades(): void {
+    this.approvalService.getGrades('', 100).subscribe({
+      next: (data) => {
+        this.gradeOptions = data;
+        this.cdr.detectChanges();
+      },
+      error: () => {
+        this.showToastMessage('Could not load grades.', 'error');
+      }
+    });
+  }
+
+  private loadSections(): void {
+    this.approvalService.getSections(this.selectedGrade, '', 100).subscribe({
+      next: (data) => {
+        this.sectionOptions = data;
+        this.cdr.detectChanges();
+      },
+      error: () => {
+        this.showToastMessage('Could not load sections.', 'error');
+      }
+    });
+  }
+
+  private loadStudents(): void {
+    this.studentLoading = true;
+    this.approvalService.getStudents({
+      grade: this.selectedGrade,
+      section: this.selectedSection,
+      search: this.studentSearch,
+      page: this.studentPage,
+      pageSize: this.studentPageSize,
+      onlyActive: true
+    }).subscribe({
+      next: (result) => {
+        this.studentResults = result.items;
+        this.studentTotal = result.total;
+        this.studentLoading = false;
+        this.cdr.detectChanges();
+      },
+      error: () => {
+        this.studentResults = [];
+        this.studentTotal = 0;
+        this.studentLoading = false;
+        this.showToastMessage('Could not load students.', 'error');
+        this.cdr.detectChanges();
+      }
+    });
   }
 }

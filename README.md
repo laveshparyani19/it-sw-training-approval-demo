@@ -12,6 +12,7 @@ Delivered implementation includes:
 
 - End-to-end approve and reject flow with API validation
 - Dashboard UI for request management
+- Task 9 student selector with multi-select and profile cards
 - Rejection reason capture and feedback notifications
 - Search and pagination for operational usability
 - Supabase as primary datastore with optional MSSQL reporting sync
@@ -27,6 +28,12 @@ Delivered implementation includes:
 - Approve and reject endpoints with business rule checks
 - Search by ID, title, and requester
 - Client-side pagination and page size controls
+- Task switcher in dashboard (Task 2 and Task 9)
+- Student directory API integration with:
+  - Grade and section filtering
+  - Name/code search
+  - Paged loading for faster response
+  - Multi-select with photo cards
 - CORS handling for dynamic Vercel preview deployments
 - Optional Supabase-to-MSSQL sync worker with:
   - Watermark-based incremental sync
@@ -57,6 +64,13 @@ Sync operations:
 - POST /api/sync/run
 - POST /api/sync/reconcile
 
+Student directory operations (Task 9):
+
+- GET /api/students/grades
+- GET /api/students/sections
+- GET /api/students/directory
+- GET /api/students/by-ids
+
 ## Local Setup
 
 Prerequisites:
@@ -86,8 +100,12 @@ npm start
 
 - Supabase schema and seed script:
   - ApprovalDemo/api/supabase_schema.sql
+- Supabase Task 9 student directory schema:
+  - ApprovalDemo/api/supabase_student_task9_schema.sql
 - MSSQL reporting mirror schema:
   - ApprovalDemo/api/mssql_reporting_schema.sql
+- MSSQL Task 9 student mirror schema:
+  - ApprovalDemo/api/mssql_student_task9_schema.sql
 
 ## Environment Variables
 
@@ -105,6 +123,63 @@ Optional UI/API integration:
 Optional sync configuration:
 
 - MSSQL_CONNECTION_STRING
+- ENABLE_MSSQL_SYNC
+
+Notes:
+
+- ENABLE_MSSQL_SYNC defaults to disabled behavior unless set to true.
+- Keep ENABLE_MSSQL_SYNC disabled on Render when MSSQL is intentionally unreachable to avoid repeated warning logs.
+
+## Deployment Env Guide
+
+Use different values per environment so sync only runs where MSSQL is actually reachable.
+
+### Render flow (as shown in your Environment screen)
+
+1. Open your Render service dashboard.
+2. Go to Manage -> Environment.
+3. Click Edit in the Environment Variables card.
+4. Set or update values:
+  - ENABLE_MSSQL_SYNC=false (recommended for Render unless SQL Server is network-reachable from Render)
+  - MSSQL_CONNECTION_STRING=<set only when Render can reach SQL Server>
+5. Save changes.
+6. Trigger a deploy/redeploy so the new env values are loaded.
+
+### Copy-paste env templates
+
+Local machine (MSSQL reachable, sync ON):
+
+```powershell
+$env:ENABLE_MSSQL_SYNC="true"
+$env:MSSQL_CONNECTION_STRING="Server=YOUR_SQL_HOST;Database=YOUR_DB;User Id=YOUR_USER;Password=YOUR_PASSWORD;Encrypt=True;TrustServerCertificate=True;"
+$env:SUPABASE_CONNECTION_STRING="Host=YOUR_SUPABASE_HOST;Port=5432;Username=postgres;Password=YOUR_SUPABASE_PASSWORD;Database=postgres;SSL Mode=Require;Trust Server Certificate=true"
+dotnet run
+```
+
+Staging (choose based on connectivity):
+
+```env
+ENABLE_MSSQL_SYNC=false
+# Set only if staging can reach SQL Server:
+# MSSQL_CONNECTION_STRING=Server=...;Database=...;User Id=...;Password=...;Encrypt=True;TrustServerCertificate=True;
+SUPABASE_CONNECTION_STRING=Host=...;Port=5432;Username=postgres;Password=...;Database=postgres;SSL Mode=Require;Trust Server Certificate=true
+```
+
+Production on Render (typical safe default):
+
+```env
+ENABLE_MSSQL_SYNC=false
+SUPABASE_CONNECTION_STRING=Host=...;Port=5432;Username=postgres;Password=...;Database=postgres;SSL Mode=Require;Trust Server Certificate=true
+FRONTEND_URL=https://it-sw-training-approval-demo.vercel.app/
+ALLOW_VERCEL_PREVIEWS=true
+VERCEL_PROJECT_SLUG=it-sw-training-approval-demo
+```
+
+### Verification
+
+- With sync OFF: POST /api/sync/run returns a disabled/skipped message.
+- With sync ON and MSSQL reachable: POST /api/sync/run processes rows and returns success counts.
+- If sync is ON but MSSQL is unreachable, switch ENABLE_MSSQL_SYNC back to false for that environment.
 
 ## Project Structure
 

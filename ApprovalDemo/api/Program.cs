@@ -7,7 +7,16 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Prefer a full connection string from env (pooler/direct), with backward-compatible fallback.
 var rawConnectionString = Environment.GetEnvironmentVariable("SUPABASE_CONNECTION_STRING")
-    ?? Environment.GetEnvironmentVariable("DATABASE_URL");
+    ?? Environment.GetEnvironmentVariable("DATABASE_URL")
+    ?? builder.Configuration["SUPABASE_CONNECTION_STRING"];
+
+var configuredDefaultConnection = builder.Configuration.GetConnectionString("DefaultConnection");
+if (string.IsNullOrWhiteSpace(rawConnectionString)
+    && !string.IsNullOrWhiteSpace(configuredDefaultConnection)
+    && !string.Equals(configuredDefaultConnection, "DefaultConnection", StringComparison.OrdinalIgnoreCase))
+{
+    rawConnectionString = configuredDefaultConnection;
+}
 
 string connectionString;
 if (!string.IsNullOrWhiteSpace(rawConnectionString))
@@ -20,6 +29,7 @@ if (!string.IsNullOrWhiteSpace(rawConnectionString))
 else
 {
     var supabasePassword = Environment.GetEnvironmentVariable("SUPABASE_PASSWORD")
+        ?? builder.Configuration["SUPABASE_PASSWORD"]
         ?? throw new InvalidOperationException("Set SUPABASE_CONNECTION_STRING (recommended) or SUPABASE_PASSWORD");
     var host = Environment.GetEnvironmentVariable("SUPABASE_HOST") ?? "db.qxevtcviybjzqueipukf.supabase.co";
     var port = Environment.GetEnvironmentVariable("SUPABASE_PORT") ?? "5432";
@@ -52,8 +62,16 @@ builder.Services.AddSwaggerGen();
 
 // Register Repository
 builder.Services.AddScoped<ApprovalRepository>();
+builder.Services.AddScoped<StudentRepository>();
 builder.Services.AddSingleton<ApprovalSyncService>();
-builder.Services.AddHostedService<ApprovalSyncHostedService>();
+var enableMssqlSync = string.Equals(
+    Environment.GetEnvironmentVariable("ENABLE_MSSQL_SYNC") ?? builder.Configuration["ENABLE_MSSQL_SYNC"],
+    "true",
+    StringComparison.OrdinalIgnoreCase);
+if (enableMssqlSync)
+{
+    builder.Services.AddHostedService<ApprovalSyncHostedService>();
+}
 
 // Enable CORS - allow dynamic frontend URLs
 builder.Services.AddCors(options =>

@@ -18,3 +18,20 @@ export interface DecisionDto {
   decisionBy: string;
   rejectReason?: string;
 }
+
+export interface StudentDirectoryItem {
+  id: number;
+  studentCode: string;
+  fullName: string;
+  gradeName: string;
+  sectionName: string;
+  photoUrl?: string;
+  isActive: boolean;
+}
+
+export interface PagedResult<T> {
+  items: T[];
+  total: number;
+  page: number;
+  pageSize: number;
+}

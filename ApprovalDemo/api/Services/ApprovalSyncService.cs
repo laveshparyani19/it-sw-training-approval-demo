@@ -16,6 +16,7 @@ namespace ApprovalDemo.Api.Services
         private const string SyncName = "ApprovalToMssql";
         private readonly string _supabaseConnectionString;
         private readonly string? _mssqlConnectionString;
+        private readonly bool _syncExplicitlyEnabled;
         private readonly ILogger<ApprovalSyncService> _logger;
         private readonly SemaphoreSlim _syncLock = new(1, 1);
         private DateTime _lastReconciliationDateUtc = DateTime.MinValue;
@@ -28,14 +29,23 @@ namespace ApprovalDemo.Api.Services
             _supabaseConnectionString = configuration.GetConnectionString("DefaultConnection")
                 ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
             _mssqlConnectionString = configuration.GetConnectionString("MssqlReporting");
-            _mssqlReady = !string.IsNullOrWhiteSpace(_mssqlConnectionString);
-            if (!_mssqlReady)
+            _syncExplicitlyEnabled = string.Equals(
+                Environment.GetEnvironmentVariable("ENABLE_MSSQL_SYNC") ?? configuration["ENABLE_MSSQL_SYNC"],
+                "true",
+                StringComparison.OrdinalIgnoreCase);
+
+            _mssqlReady = _syncExplicitlyEnabled && !string.IsNullOrWhiteSpace(_mssqlConnectionString);
+            if (!_syncExplicitlyEnabled)
+            {
+                _mssqlDisabledReason = "MSSQL sync disabled. Set ENABLE_MSSQL_SYNC=true to enable.";
+            }
+            else if (!_mssqlReady)
             {
                 _mssqlDisabledReason = "MSSQL_CONNECTION_STRING is not configured.";
             }
         }
 
-        public bool IsEnabled => !string.IsNullOrWhiteSpace(_mssqlConnectionString);
+        public bool IsEnabled => _syncExplicitlyEnabled && !string.IsNullOrWhiteSpace(_mssqlConnectionString);
 
         public async Task InitializeAsync(CancellationToken cancellationToken)
         {
