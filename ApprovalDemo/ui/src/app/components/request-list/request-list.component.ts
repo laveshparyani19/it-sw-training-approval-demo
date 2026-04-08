@@ -121,17 +121,43 @@ import { ApprovalRequest, StudentDirectoryItem } from '../../models/approval.mod
             <ng-container *ngIf="activeTask === 'task9'">
               <div class="student-filters">
                 <div class="student-filter-item">
-                  <label for="grade-select">Select Grade(s)</label>
-                  <select id="grade-select" multiple size="5" [(ngModel)]="selectedGrades" (ngModelChange)="onGradesChanged()">
-                    <option *ngFor="let grade of gradeOptions" [ngValue]="grade">{{ grade }}</option>
-                  </select>
+                  <label>Select Grade(s)</label>
+                  <div class="filter-box">
+                    <div class="filter-box-header">
+                      <span>{{ selectedGrades.length === 0 ? 'All grades' : (selectedGrades.length + ' selected') }}</span>
+                      <button type="button" class="mini-action" (click)="clearGrades()" [disabled]="selectedGrades.length === 0">Clear</button>
+                    </div>
+                    <div class="filter-options">
+                      <button
+                        type="button"
+                        class="filter-option"
+                        *ngFor="let grade of gradeOptions"
+                        [class.active]="isGradeSelected(grade)"
+                        (click)="toggleGrade(grade, $event)">
+                        {{ grade }}
+                      </button>
+                    </div>
+                  </div>
                 </div>
 
                 <div class="student-filter-item">
-                  <label for="section-select">Select Section(s)</label>
-                  <select id="section-select" multiple size="5" [(ngModel)]="selectedSections" (ngModelChange)="onSectionsChanged()">
-                    <option *ngFor="let section of sectionOptions" [ngValue]="section">{{ section }}</option>
-                  </select>
+                  <label>Select Section(s)</label>
+                  <div class="filter-box">
+                    <div class="filter-box-header">
+                      <span>{{ selectedSections.length === 0 ? 'All sections' : (selectedSections.length + ' selected') }}</span>
+                      <button type="button" class="mini-action" (click)="clearSections()" [disabled]="selectedSections.length === 0">Clear</button>
+                    </div>
+                    <div class="filter-options">
+                      <button
+                        type="button"
+                        class="filter-option"
+                        *ngFor="let section of sectionOptions"
+                        [class.active]="isSectionSelected(section)"
+                        (click)="toggleSection(section, $event)">
+                        {{ section }}
+                      </button>
+                    </div>
+                  </div>
                 </div>
 
                 <div class="student-search-box">
@@ -170,7 +196,7 @@ import { ApprovalRequest, StudentDirectoryItem } from '../../models/approval.mod
                   *ngFor="let student of studentResults"
                   class="student-card"
                   [class.selected]="isSelected(student.id)">
-                  <img [src]="student.photoUrl || defaultStudentPhoto" [alt]="student.fullName" loading="lazy" />
+                  <img [src]="resolveStudentPhoto(student)" [alt]="student.fullName" (error)="onStudentImageError($event, student)" loading="lazy" />
                   <div>
                     <p class="student-name">{{ student.fullName }}</p>
                     <p class="student-meta">{{ student.studentCode }} | {{ student.gradeName }}-{{ student.sectionName }}</p>
@@ -205,7 +231,7 @@ import { ApprovalRequest, StudentDirectoryItem } from '../../models/approval.mod
 
                 <div class="selected-grid" *ngIf="selectedStudents.length > 0">
                   <article *ngFor="let student of selectedStudents" class="selected-card">
-                    <img [src]="student.photoUrl || defaultStudentPhoto" [alt]="student.fullName" loading="lazy" />
+                    <img [src]="resolveStudentPhoto(student)" [alt]="student.fullName" (error)="onStudentImageError($event, student)" loading="lazy" />
                     <div>
                       <p class="student-name">{{ student.fullName }}</p>
                       <p class="student-meta">{{ student.studentCode }} | {{ student.gradeName }}-{{ student.sectionName }}</p>
@@ -270,7 +296,9 @@ export class RequestListComponent implements OnInit {
   studentPage = 1;
   studentPageSize = 24;
   studentTotal = 0;
-  defaultStudentPhoto = 'https://via.placeholder.com/84x84.png?text=Student';
+  private failedPhotoStudentIds = new Set<number>();
+  private readonly maleAvatar = this.buildAvatarDataUri('#d7ecff', '#1b5f8c', 'M');
+  private readonly femaleAvatar = this.buildAvatarDataUri('#ffe0ee', '#8a2f5a', 'F');
   private studentSearchDebounceId: number | null = null;
 
   get filteredRequests(): ApprovalRequest[] {
@@ -458,6 +486,50 @@ export class RequestListComponent implements OnInit {
     this.reloadStudentsFromStart();
   }
 
+  isGradeSelected(grade: string): boolean {
+    return this.selectedGrades.includes(grade);
+  }
+
+  toggleGrade(grade: string, event: Event): void {
+    event.preventDefault();
+    if (this.isGradeSelected(grade)) {
+      this.selectedGrades = this.selectedGrades.filter((value) => value !== grade);
+    } else {
+      this.selectedGrades = [...this.selectedGrades, grade];
+    }
+    this.onGradesChanged();
+  }
+
+  clearGrades(): void {
+    if (this.selectedGrades.length === 0) {
+      return;
+    }
+    this.selectedGrades = [];
+    this.onGradesChanged();
+  }
+
+  isSectionSelected(section: string): boolean {
+    return this.selectedSections.includes(section);
+  }
+
+  toggleSection(section: string, event: Event): void {
+    event.preventDefault();
+    if (this.isSectionSelected(section)) {
+      this.selectedSections = this.selectedSections.filter((value) => value !== section);
+    } else {
+      this.selectedSections = [...this.selectedSections, section];
+    }
+    this.onSectionsChanged();
+  }
+
+  clearSections(): void {
+    if (this.selectedSections.length === 0) {
+      return;
+    }
+    this.selectedSections = [];
+    this.onSectionsChanged();
+  }
+
   onStudentSearchChanged(): void {
     if (this.studentSearchDebounceId !== null) {
       window.clearTimeout(this.studentSearchDebounceId);
@@ -554,6 +626,19 @@ export class RequestListComponent implements OnInit {
     return this.studentResults.filter((student) => !this.selectedStudentIds.has(student.id));
   }
 
+  resolveStudentPhoto(student: StudentDirectoryItem): string {
+    if (student.photoUrl && !this.failedPhotoStudentIds.has(student.id)) {
+      return student.photoUrl;
+    }
+    return this.isLikelyFemale(student) ? this.femaleAvatar : this.maleAvatar;
+  }
+
+  onStudentImageError(event: Event, student: StudentDirectoryItem): void {
+    this.failedPhotoStudentIds.add(student.id);
+    const image = event.target as HTMLImageElement;
+    image.src = this.resolveStudentPhoto(student);
+  }
+
   private loadGrades(): void {
     this.approvalService.getGrades('', 100).subscribe({
       next: (data) => {
@@ -605,5 +690,24 @@ export class RequestListComponent implements OnInit {
         this.cdr.detectChanges();
       }
     });
+  }
+
+  private isLikelyFemale(student: StudentDirectoryItem): boolean {
+    const firstName = (student.fullName.split(' ')[0] ?? '').toLowerCase();
+    const knownFemaleNames = ['aadya', 'aaeesha', 'diya', 'ira', 'mira', 'riya', 'anaya', 'siya'];
+    if (knownFemaleNames.includes(firstName)) {
+      return true;
+    }
+
+    if (firstName.endsWith('a') || firstName.endsWith('i')) {
+      return true;
+    }
+
+    return student.id % 2 === 0;
+  }
+
+  private buildAvatarDataUri(background: string, foreground: string, label: string): string {
+    const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='96' height='96' viewBox='0 0 96 96'><rect width='96' height='96' rx='48' fill='${background}'/><circle cx='48' cy='34' r='16' fill='${foreground}' opacity='0.22'/><path d='M20 81c0-16 12-26 28-26s28 10 28 26' fill='${foreground}' opacity='0.25'/><text x='48' y='54' text-anchor='middle' font-family='Arial, sans-serif' font-size='22' font-weight='700' fill='${foreground}'>${label}</text></svg>`;
+    return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
   }
 }
