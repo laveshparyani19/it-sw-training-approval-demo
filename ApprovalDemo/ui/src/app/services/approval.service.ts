@@ -33,13 +33,15 @@ export class ApprovalService {
   }
 
   getGrades(search = '%', limit = 50): Observable<string[]> {
-    return this.http.get<string[]>(`${this.studentApiUrl}/grades?search=${encodeURIComponent(search)}&limit=${limit}`);
+    const effectiveSearch = search && search.trim().length > 0 ? search : '%';
+    return this.http.get<string[]>(`${this.studentApiUrl}/grades?search=${encodeURIComponent(effectiveSearch)}&limit=${limit}`);
   }
 
   getSections(grades: string[] = [], search = '%', limit = 50): Observable<string[]> {
+    const effectiveSearch = search && search.trim().length > 0 ? search : '%';
     const gradesCsv = encodeURIComponent(grades.join(','));
     return this.http.get<string[]>(
-      `${this.studentApiUrl}/sections?grades=${gradesCsv}&search=${encodeURIComponent(search)}&limit=${limit}`
+      `${this.studentApiUrl}/sections?grades=${gradesCsv}&search=${encodeURIComponent(effectiveSearch)}&limit=${limit}`
     );
   }
 
