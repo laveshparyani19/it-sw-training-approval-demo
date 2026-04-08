@@ -143,7 +143,7 @@ import { ApprovalRequest, StudentDirectoryItem } from '../../models/approval.mod
                 <div class="student-filter-item">
                   <label for="section-select">Select Section(s)</label>
                   <div class="multi-dropdown" (click)="$event.stopPropagation()">
-                    <button type="button" id="section-select" class="multi-dropdown-toggle" [disabled]="selectedGrades.length === 0" (click)="toggleSectionDropdown()">
+                    <button type="button" id="section-select" class="multi-dropdown-toggle" (click)="toggleSectionDropdown()">
                       <span>{{ sectionSelectionSummary }}</span>
                       <span class="caret">▾</span>
                     </button>
@@ -156,6 +156,8 @@ import { ApprovalRequest, StudentDirectoryItem } from '../../models/approval.mod
                         <input type="checkbox" [checked]="selectedSections.includes(section)" (change)="toggleSectionSelection(section, $event)" />
                         <span>{{ section }}</span>
                       </label>
+                      <p class="multi-empty" *ngIf="selectedGrades.length === 0">Select grade first to load sections</p>
+                      <p class="multi-empty" *ngIf="selectedGrades.length > 0 && sectionOptions.length === 0">No sections available</p>
                     </div>
                   </div>
                 </div>
@@ -178,7 +180,7 @@ import { ApprovalRequest, StudentDirectoryItem } from '../../models/approval.mod
                 <div class="student-filter-item student-picker-field">
                   <label for="student-picker">Select Student(s)</label>
                   <div class="multi-dropdown" (click)="$event.stopPropagation()">
-                    <button type="button" id="student-picker" class="multi-dropdown-toggle" [disabled]="selectedGrades.length === 0" (click)="toggleStudentDropdown()">
+                    <button type="button" id="student-picker" class="multi-dropdown-toggle" (click)="toggleStudentDropdown()">
                       <span>{{ studentSelectionSummary }}</span>
                       <span class="caret">▾</span>
                     </button>
@@ -191,11 +193,12 @@ import { ApprovalRequest, StudentDirectoryItem } from '../../models/approval.mod
                         <input type="checkbox" [checked]="pendingStudentIds.includes(student.id)" (change)="toggleStudentSelection(student.id, $event)" />
                         <span>{{ student.fullName }} ({{ student.studentCode }})</span>
                       </label>
-                      <p class="multi-empty" *ngIf="selectableStudents.length === 0">No students available</p>
+                      <p class="multi-empty" *ngIf="selectedGrades.length === 0">Select grade first to load students</p>
+                      <p class="multi-empty" *ngIf="selectedGrades.length > 0 && selectableStudents.length === 0">No students available</p>
                     </div>
                   </div>
                 </div>
-                <button class="btn btn-approve" (click)="addPendingStudents()" [disabled]="selectedGrades.length === 0 || pendingStudentIds.length === 0">Add Selected</button>
+                <button class="btn btn-approve" (click)="addPendingStudents()" [disabled]="pendingStudentIds.length === 0">Add Selected</button>
               </div>
 
               <div *ngIf="studentLoading" class="loader-box">
@@ -572,20 +575,12 @@ export class RequestListComponent implements OnInit {
   }
 
   toggleSectionDropdown(): void {
-    if (this.selectedGrades.length === 0) {
-      return;
-    }
-
     this.sectionDropdownOpen = !this.sectionDropdownOpen;
     this.gradeDropdownOpen = false;
     this.studentDropdownOpen = false;
   }
 
   toggleStudentDropdown(): void {
-    if (this.selectedGrades.length === 0) {
-      return;
-    }
-
     this.studentDropdownOpen = !this.studentDropdownOpen;
     this.gradeDropdownOpen = false;
     this.sectionDropdownOpen = false;
