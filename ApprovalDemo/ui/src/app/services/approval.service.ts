@@ -32,11 +32,11 @@ export class ApprovalService {
     return this.http.get<ApprovalRequest>(`${this.apiUrl}/${id}`);
   }
 
-  getGrades(search = '', limit = 50): Observable<string[]> {
+  getGrades(search = '%', limit = 50): Observable<string[]> {
     return this.http.get<string[]>(`${this.studentApiUrl}/grades?search=${encodeURIComponent(search)}&limit=${limit}`);
   }
 
-  getSections(grades: string[] = [], search = '', limit = 50): Observable<string[]> {
+  getSections(grades: string[] = [], search = '%', limit = 50): Observable<string[]> {
     const gradesCsv = encodeURIComponent(grades.join(','));
     return this.http.get<string[]>(
       `${this.studentApiUrl}/sections?grades=${gradesCsv}&search=${encodeURIComponent(search)}&limit=${limit}`
@@ -53,7 +53,8 @@ export class ApprovalService {
   }): Observable<PagedResult<StudentDirectoryItem>> {
     const grades = encodeURIComponent((params.grades ?? []).join(','));
     const sections = encodeURIComponent((params.sections ?? []).join(','));
-    const search = encodeURIComponent(params.search ?? '');
+    const effectiveSearch = params.search && params.search.trim().length > 0 ? params.search : '%';
+    const search = encodeURIComponent(effectiveSearch);
     const page = params.page ?? 1;
     const pageSize = params.pageSize ?? 24;
     const onlyActive = params.onlyActive ?? true;
