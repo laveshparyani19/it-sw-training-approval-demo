@@ -55,6 +55,7 @@ namespace ApprovalDemo.Api.Services
                 try
                 {
                     await EnsureMssqlSchemaAsync(cancellationToken);
+                    await SyncStudentDirectorySnapshotAsync(cancellationToken);
                     _mssqlReady = true;
                     _mssqlDisabledReason = string.Empty;
                 }
@@ -101,6 +102,7 @@ namespace ApprovalDemo.Api.Services
 
                 if (changedRows.Count == 0)
                 {
+                    var studentUpsertsOnNoDelta = await SyncStudentDirectorySnapshotAsync(cancellationToken);
                     await MaybeRunDailyReconciliationAsync(cancellationToken);
                     return new SyncRunResult
                     {
@@ -110,7 +112,7 @@ namespace ApprovalDemo.Api.Services
                         Processed = 0,
                         Successful = 0,
                         Failed = 0,
-                        Message = "No changed rows found."
+                        Message = $"No changed approval rows found. StudentDirectory snapshot upserted {studentUpsertsOnNoDelta} rows."
                     };
                 }
 
@@ -139,6 +141,7 @@ namespace ApprovalDemo.Api.Services
                     await SetWatermarkAsync(latestSuccessfulWatermark, cancellationToken);
                 }
 
+                var studentUpserts = await SyncStudentDirectorySnapshotAsync(cancellationToken);
                 await MaybeRunDailyReconciliationAsync(cancellationToken);
 
                 return new SyncRunResult
@@ -151,7 +154,7 @@ namespace ApprovalDemo.Api.Services
                     Failed = failed,
                     Message = failed > 0
                         ? "Stopped at first failed row. Failed row logged to dead-letter table for review."
-                        : "Sync completed successfully."
+                        : $"Sync completed successfully. StudentDirectory snapshot upserted {studentUpserts} rows."
                 };
             }
             finally
@@ -240,6 +243,109 @@ namespace ApprovalDemo.Api.Services
             }
 
             return false;
+        }
+
+        private async Task<int> SyncStudentDirectorySnapshotAsync(CancellationToken cancellationToken)
+        {
+            var rows = await GetStudentSourceRowsAsync(cancellationToken);
+            if (rows.Count == 0)
+            {
+                return 0;
+            }
+
+            await using var connection = new SqlConnection(_mssqlConnectionString);
+            await connection.OpenAsync(cancellationToken);
+
+            foreach (var row in rows)
+            {
+                await UpsertStudentRowToMssqlAsync(connection, row, cancellationToken);
+            }
+
+            return rows.Count;
+        }
+
+        private async Task<List<StudentSourceRow>> GetStudentSourceRowsAsync(CancellationToken cancellationToken)
+        {
+            var rows = new List<StudentSourceRow>();
+
+            await using var connection = new NpgsqlConnection(_supabaseConnectionString);
+            await connection.OpenAsync(cancellationToken);
+
+            const string sql = @"
+SELECT
+    ""Id"",
+    ""StudentCode"",
+    ""FullName"",
+    ""GradeName"",
+    ""SectionName"",
+    ""PhotoUrl"",
+    COALESCE(""IsActive"", TRUE) AS ""IsActive"",
+    ""UpdatedAt""
+FROM ""StudentDirectory""
+ORDER BY ""Id"";";
+
+            await using var command = new NpgsqlCommand(sql, connection);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                rows.Add(new StudentSourceRow
+                {
+                    Id = reader.GetInt32(reader.GetOrdinal("Id")),
+                    StudentCode = reader.GetString(reader.GetOrdinal("StudentCode")),
+                    FullName = reader.GetString(reader.GetOrdinal("FullName")),
+                    GradeName = reader.GetString(reader.GetOrdinal("GradeName")),
+                    SectionName = reader.GetString(reader.GetOrdinal("SectionName")),
+                    PhotoUrl = reader.IsDBNull(reader.GetOrdinal("PhotoUrl")) ? null : reader.GetString(reader.GetOrdinal("PhotoUrl")),
+                    IsActive = reader.GetBoolean(reader.GetOrdinal("IsActive")),
+                    UpdatedAtUtc = reader.GetDateTime(reader.GetOrdinal("UpdatedAt"))
+                });
+            }
+
+            return rows;
+        }
+
+        private static async Task UpsertStudentRowToMssqlAsync(SqlConnection connection, StudentSourceRow row, CancellationToken cancellationToken)
+        {
+            const string sql = @"
+MERGE dbo.StudentDirectoryMirror AS target
+USING (
+    SELECT
+        @Id AS Id,
+        @StudentCode AS StudentCode,
+        @FullName AS FullName,
+        @GradeName AS GradeName,
+        @SectionName AS SectionName,
+        @PhotoUrl AS PhotoUrl,
+        @IsActive AS IsActive,
+        @UpdatedAt AS UpdatedAt
+) AS source
+ON target.Id = source.Id
+WHEN MATCHED AND target.UpdatedAt <= source.UpdatedAt THEN
+    UPDATE SET
+        StudentCode = source.StudentCode,
+        FullName = source.FullName,
+        GradeName = source.GradeName,
+        SectionName = source.SectionName,
+        PhotoUrl = source.PhotoUrl,
+        IsActive = source.IsActive,
+        UpdatedAt = source.UpdatedAt,
+        LastSyncedAt = SYSUTCDATETIME()
+WHEN NOT MATCHED THEN
+    INSERT (Id, StudentCode, FullName, GradeName, SectionName, PhotoUrl, IsActive, UpdatedAt, LastSyncedAt)
+    VALUES (source.Id, source.StudentCode, source.FullName, source.GradeName, source.SectionName, source.PhotoUrl, source.IsActive, source.UpdatedAt, SYSUTCDATETIME());";
+
+            await using var command = new SqlCommand(sql, connection);
+            command.Parameters.Add("@Id", SqlDbType.Int).Value = row.Id;
+            command.Parameters.Add("@StudentCode", SqlDbType.NVarChar, 50).Value = row.StudentCode;
+            command.Parameters.Add("@FullName", SqlDbType.NVarChar, 200).Value = row.FullName;
+            command.Parameters.Add("@GradeName", SqlDbType.NVarChar, 50).Value = row.GradeName;
+            command.Parameters.Add("@SectionName", SqlDbType.NVarChar, 50).Value = row.SectionName;
+            command.Parameters.Add("@PhotoUrl", SqlDbType.NVarChar, -1).Value = (object?)row.PhotoUrl ?? DBNull.Value;
+            command.Parameters.Add("@IsActive", SqlDbType.Bit).Value = row.IsActive;
+            command.Parameters.Add("@UpdatedAt", SqlDbType.DateTimeOffset).Value = new DateTimeOffset(DateTime.SpecifyKind(row.UpdatedAtUtc, DateTimeKind.Utc));
+
+            await command.ExecuteNonQueryAsync(cancellationToken);
         }
 
         private async Task UpsertRowToMssqlAsync(SyncSourceRow row, CancellationToken cancellationToken)
@@ -626,8 +732,47 @@ BEGIN
     CREATE INDEX IX_ApprovalRequestMirror_UpdatedAt ON dbo.ApprovalRequestMirror(UpdatedAt);
 END;";
 
+            const string studentSql = @"
+IF OBJECT_ID(N'dbo.StudentDirectoryMirror', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.StudentDirectoryMirror (
+        Id INT NOT NULL PRIMARY KEY,
+        StudentCode NVARCHAR(50) NOT NULL,
+        FullName NVARCHAR(200) NOT NULL,
+        GradeName NVARCHAR(50) NOT NULL,
+        SectionName NVARCHAR(50) NOT NULL,
+        PhotoUrl NVARCHAR(MAX) NULL,
+        IsActive BIT NOT NULL,
+        UpdatedAt DATETIMEOFFSET(0) NOT NULL,
+        LastSyncedAt DATETIMEOFFSET(0) NOT NULL CONSTRAINT DF_StudentDirectoryMirror_LastSyncedAt DEFAULT SYSUTCDATETIME()
+    );
+END;
+
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = N'IX_StudentDirectoryMirror_Grade_Section'
+      AND object_id = OBJECT_ID(N'dbo.StudentDirectoryMirror')
+)
+BEGIN
+    CREATE INDEX IX_StudentDirectoryMirror_Grade_Section ON dbo.StudentDirectoryMirror(GradeName, SectionName);
+END;
+
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = N'IX_StudentDirectoryMirror_Active_FullName'
+      AND object_id = OBJECT_ID(N'dbo.StudentDirectoryMirror')
+)
+BEGIN
+    CREATE INDEX IX_StudentDirectoryMirror_Active_FullName ON dbo.StudentDirectoryMirror(IsActive, FullName);
+END;";
+
             await using var command = new SqlCommand(sql, connection);
             await command.ExecuteNonQueryAsync(cancellationToken);
+
+            await using var studentCommand = new SqlCommand(studentSql, connection);
+            await studentCommand.ExecuteNonQueryAsync(cancellationToken);
         }
     }
 
@@ -674,5 +819,17 @@ END;";
         public DateTime? DecisionAtUtc { get; init; }
         public string? RejectReason { get; init; }
         public Guid OperationId { get; init; }
+    }
+
+    internal sealed class StudentSourceRow
+    {
+        public int Id { get; init; }
+        public string StudentCode { get; init; } = string.Empty;
+        public string FullName { get; init; } = string.Empty;
+        public string GradeName { get; init; } = string.Empty;
+        public string SectionName { get; init; } = string.Empty;
+        public string? PhotoUrl { get; init; }
+        public bool IsActive { get; init; }
+        public DateTime UpdatedAtUtc { get; init; }
     }
 }
