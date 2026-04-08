@@ -127,7 +127,8 @@ Optional sync configuration:
 
 Notes:
 
-- ENABLE_MSSQL_SYNC defaults to disabled behavior unless set to true.
+- Sync runs automatically when MSSQL_CONNECTION_STRING is configured.
+- Set ENABLE_MSSQL_SYNC=false to force-disable sync.
 - Keep ENABLE_MSSQL_SYNC disabled on Render when MSSQL is intentionally unreachable to avoid repeated warning logs.
 
 ## Deployment Env Guide
