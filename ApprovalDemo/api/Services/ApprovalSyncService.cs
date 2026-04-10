@@ -56,6 +56,7 @@ namespace ApprovalDemo.Api.Services
                 {
                     await EnsureMssqlSchemaAsync(cancellationToken);
                     await SyncStudentDirectorySnapshotAsync(cancellationToken);
+                    await SyncStaffDirectorySnapshotAsync(cancellationToken);
                     await SynchronizeMirrorDeletesAsync(cancellationToken);
                     _mssqlReady = true;
                     _mssqlDisabledReason = string.Empty;
@@ -104,6 +105,7 @@ namespace ApprovalDemo.Api.Services
                 if (changedRows.Count == 0)
                 {
                     var studentUpsertsOnNoDelta = await SyncStudentDirectorySnapshotAsync(cancellationToken);
+                    var staffUpsertsOnNoDelta = await SyncStaffDirectorySnapshotAsync(cancellationToken);
                     var noDeltaDeletes = await SynchronizeMirrorDeletesAsync(cancellationToken);
                     await MaybeRunDailyReconciliationAsync(cancellationToken);
                     return new SyncRunResult
@@ -114,7 +116,7 @@ namespace ApprovalDemo.Api.Services
                         Processed = 0,
                         Successful = 0,
                         Failed = 0,
-                        Message = $"No changed approval rows found. StudentDirectory snapshot upserted {studentUpsertsOnNoDelta} rows. Mirror cleanup removed {noDeltaDeletes.approvalDeleted} approval rows and {noDeltaDeletes.studentDeleted} student rows."
+                        Message = $"No changed approval rows found. StudentDirectory snapshot upserted {studentUpsertsOnNoDelta} rows, StaffDirectory snapshot upserted {staffUpsertsOnNoDelta} rows. Mirror cleanup removed {noDeltaDeletes.approvalDeleted} approval rows, {noDeltaDeletes.studentDeleted} student rows and {noDeltaDeletes.staffDeleted} staff rows."
                     };
                 }
 
@@ -144,6 +146,7 @@ namespace ApprovalDemo.Api.Services
                 }
 
                 var studentUpserts = await SyncStudentDirectorySnapshotAsync(cancellationToken);
+                var staffUpserts = await SyncStaffDirectorySnapshotAsync(cancellationToken);
                 var deleteSync = await SynchronizeMirrorDeletesAsync(cancellationToken);
                 await MaybeRunDailyReconciliationAsync(cancellationToken);
 
@@ -157,7 +160,7 @@ namespace ApprovalDemo.Api.Services
                     Failed = failed,
                     Message = failed > 0
                         ? "Stopped at first failed row. Failed row logged to dead-letter table for review."
-                        : $"Sync completed successfully. StudentDirectory snapshot upserted {studentUpserts} rows. Mirror cleanup removed {deleteSync.approvalDeleted} approval rows and {deleteSync.studentDeleted} student rows."
+                        : $"Sync completed successfully. StudentDirectory snapshot upserted {studentUpserts} rows, StaffDirectory snapshot upserted {staffUpserts} rows. Mirror cleanup removed {deleteSync.approvalDeleted} approval rows, {deleteSync.studentDeleted} student rows and {deleteSync.staffDeleted} staff rows."
                 };
             }
             finally
@@ -351,7 +354,120 @@ WHEN NOT MATCHED THEN
             await command.ExecuteNonQueryAsync(cancellationToken);
         }
 
-        private async Task<(int approvalDeleted, int studentDeleted)> SynchronizeMirrorDeletesAsync(CancellationToken cancellationToken)
+        private async Task<int> SyncStaffDirectorySnapshotAsync(CancellationToken cancellationToken)
+        {
+            var rows = await GetStaffSourceRowsAsync(cancellationToken);
+            if (rows.Count == 0)
+            {
+                return 0;
+            }
+
+            await using var connection = new SqlConnection(_mssqlConnectionString);
+            await connection.OpenAsync(cancellationToken);
+
+            foreach (var row in rows)
+            {
+                await UpsertStaffRowToMssqlAsync(connection, row, cancellationToken);
+            }
+
+            return rows.Count;
+        }
+
+        private async Task<List<StaffSourceRow>> GetStaffSourceRowsAsync(CancellationToken cancellationToken)
+        {
+            var rows = new List<StaffSourceRow>();
+
+            await using var connection = new NpgsqlConnection(_supabaseConnectionString);
+            await connection.OpenAsync(cancellationToken);
+
+            const string sql = @"
+SELECT
+    ""Id"",
+    ""StaffCode"",
+    ""FullName"",
+    ""DepartmentName"",
+    ""TeamName"",
+    ""Designation"",
+    ""PhotoUrl"",
+    COALESCE(""IsActive"", TRUE) AS ""IsActive"",
+    COALESCE(""IsSystemAccount"", FALSE) AS ""IsSystemAccount"",
+    ""UpdatedAt""
+FROM ""StaffDirectory""
+ORDER BY ""Id"";";
+
+            await using var command = new NpgsqlCommand(sql, connection);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                rows.Add(new StaffSourceRow
+                {
+                    Id = reader.GetInt32(reader.GetOrdinal("Id")),
+                    StaffCode = reader.GetString(reader.GetOrdinal("StaffCode")),
+                    FullName = reader.GetString(reader.GetOrdinal("FullName")),
+                    DepartmentName = reader.GetString(reader.GetOrdinal("DepartmentName")),
+                    TeamName = reader.GetString(reader.GetOrdinal("TeamName")),
+                    Designation = reader.GetString(reader.GetOrdinal("Designation")),
+                    PhotoUrl = reader.IsDBNull(reader.GetOrdinal("PhotoUrl")) ? null : reader.GetString(reader.GetOrdinal("PhotoUrl")),
+                    IsActive = reader.GetBoolean(reader.GetOrdinal("IsActive")),
+                    IsSystemAccount = reader.GetBoolean(reader.GetOrdinal("IsSystemAccount")),
+                    UpdatedAtUtc = reader.GetDateTime(reader.GetOrdinal("UpdatedAt"))
+                });
+            }
+
+            return rows;
+        }
+
+        private static async Task UpsertStaffRowToMssqlAsync(SqlConnection connection, StaffSourceRow row, CancellationToken cancellationToken)
+        {
+            const string sql = @"
+MERGE dbo.StaffDirectoryMirror AS target
+USING (
+    SELECT
+        @Id AS Id,
+        @StaffCode AS StaffCode,
+        @FullName AS FullName,
+        @DepartmentName AS DepartmentName,
+        @TeamName AS TeamName,
+        @Designation AS Designation,
+        @PhotoUrl AS PhotoUrl,
+        @IsActive AS IsActive,
+        @IsSystemAccount AS IsSystemAccount,
+        @UpdatedAt AS UpdatedAt
+) AS source
+ON target.Id = source.Id
+WHEN MATCHED AND target.UpdatedAt <= source.UpdatedAt THEN
+    UPDATE SET
+        StaffCode = source.StaffCode,
+        FullName = source.FullName,
+        DepartmentName = source.DepartmentName,
+        TeamName = source.TeamName,
+        Designation = source.Designation,
+        PhotoUrl = source.PhotoUrl,
+        IsActive = source.IsActive,
+        IsSystemAccount = source.IsSystemAccount,
+        UpdatedAt = source.UpdatedAt,
+        LastSyncedAt = SYSUTCDATETIME()
+WHEN NOT MATCHED THEN
+    INSERT (Id, StaffCode, FullName, DepartmentName, TeamName, Designation, PhotoUrl, IsActive, IsSystemAccount, UpdatedAt, LastSyncedAt)
+    VALUES (source.Id, source.StaffCode, source.FullName, source.DepartmentName, source.TeamName, source.Designation, source.PhotoUrl, source.IsActive, source.IsSystemAccount, source.UpdatedAt, SYSUTCDATETIME());";
+
+            await using var command = new SqlCommand(sql, connection);
+            command.Parameters.Add("@Id", SqlDbType.Int).Value = row.Id;
+            command.Parameters.Add("@StaffCode", SqlDbType.NVarChar, 50).Value = row.StaffCode;
+            command.Parameters.Add("@FullName", SqlDbType.NVarChar, 200).Value = row.FullName;
+            command.Parameters.Add("@DepartmentName", SqlDbType.NVarChar, 100).Value = row.DepartmentName;
+            command.Parameters.Add("@TeamName", SqlDbType.NVarChar, 100).Value = row.TeamName;
+            command.Parameters.Add("@Designation", SqlDbType.NVarChar, 120).Value = row.Designation;
+            command.Parameters.Add("@PhotoUrl", SqlDbType.NVarChar, -1).Value = (object?)row.PhotoUrl ?? DBNull.Value;
+            command.Parameters.Add("@IsActive", SqlDbType.Bit).Value = row.IsActive;
+            command.Parameters.Add("@IsSystemAccount", SqlDbType.Bit).Value = row.IsSystemAccount;
+            command.Parameters.Add("@UpdatedAt", SqlDbType.DateTimeOffset).Value = new DateTimeOffset(DateTime.SpecifyKind(row.UpdatedAtUtc, DateTimeKind.Utc));
+
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        private async Task<(int approvalDeleted, int studentDeleted, int staffDeleted)> SynchronizeMirrorDeletesAsync(CancellationToken cancellationToken)
         {
             var approvalSourceIds = await GetSourceIdsAsync(cancellationToken);
             var approvalTargetIds = await GetTargetIdsAsync(cancellationToken);
@@ -361,13 +477,18 @@ WHEN NOT MATCHED THEN
             var studentTargetIds = await GetStudentTargetIdsAsync(cancellationToken);
             var studentStaleIds = studentTargetIds.Where(id => !studentSourceIds.Contains(id)).ToArray();
 
+            var staffSourceIds = await GetStaffSourceIdsAsync(cancellationToken);
+            var staffTargetIds = await GetStaffTargetIdsAsync(cancellationToken);
+            var staffStaleIds = staffTargetIds.Where(id => !staffSourceIds.Contains(id)).ToArray();
+
             await using var connection = new SqlConnection(_mssqlConnectionString);
             await connection.OpenAsync(cancellationToken);
 
             var approvalDeleted = await DeleteRowsByIdsAsync(connection, "DELETE FROM dbo.ApprovalRequestMirror WHERE Id = @Id", approvalStaleIds, cancellationToken);
             var studentDeleted = await DeleteRowsByIdsAsync(connection, "DELETE FROM dbo.StudentDirectoryMirror WHERE Id = @Id", studentStaleIds, cancellationToken);
+            var staffDeleted = await DeleteRowsByIdsAsync(connection, "DELETE FROM dbo.StaffDirectoryMirror WHERE Id = @Id", staffStaleIds, cancellationToken);
 
-            return (approvalDeleted, studentDeleted);
+            return (approvalDeleted, studentDeleted, staffDeleted);
         }
 
         private static async Task<int> DeleteRowsByIdsAsync(SqlConnection connection, string sql, IReadOnlyCollection<int> ids, CancellationToken cancellationToken)
@@ -702,6 +823,42 @@ VALUES (@SyncName, @EntityId, @OperationId, @Payload::jsonb, @Error, @AttemptCou
             return ids;
         }
 
+        private async Task<HashSet<int>> GetStaffSourceIdsAsync(CancellationToken cancellationToken)
+        {
+            var ids = new HashSet<int>();
+            await using var connection = new NpgsqlConnection(_supabaseConnectionString);
+            await connection.OpenAsync(cancellationToken);
+
+            const string sql = "SELECT \"Id\" FROM \"StaffDirectory\"";
+            await using var command = new NpgsqlCommand(sql, connection);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                ids.Add(reader.GetInt32(0));
+            }
+
+            return ids;
+        }
+
+        private async Task<HashSet<int>> GetStaffTargetIdsAsync(CancellationToken cancellationToken)
+        {
+            var ids = new HashSet<int>();
+            await using var connection = new SqlConnection(_mssqlConnectionString);
+            await connection.OpenAsync(cancellationToken);
+
+            const string sql = "SELECT Id FROM dbo.StaffDirectoryMirror";
+            await using var command = new SqlCommand(sql, connection);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                ids.Add(reader.GetInt32(0));
+            }
+
+            return ids;
+        }
+
         private async Task SaveReconciliationReportAsync(SyncReconciliationResult report, CancellationToken cancellationToken)
         {
             await using var connection = new NpgsqlConnection(_supabaseConnectionString);
@@ -743,6 +900,25 @@ ALTER TABLE ""ApprovalRequest"" ALTER COLUMN ""IsDeleted"" SET NOT NULL;
 ALTER TABLE ""ApprovalRequest"" ALTER COLUMN ""OperationId"" SET NOT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_approvalrequest_updatedat ON ""ApprovalRequest"" (""UpdatedAt"");
+
+CREATE TABLE IF NOT EXISTS ""StaffDirectory"" (
+    ""Id"" SERIAL PRIMARY KEY,
+    ""StaffCode"" VARCHAR(50) NOT NULL UNIQUE,
+    ""FullName"" VARCHAR(200) NOT NULL,
+    ""DepartmentName"" VARCHAR(100) NOT NULL,
+    ""TeamName"" VARCHAR(100) NOT NULL,
+    ""Designation"" VARCHAR(120) NOT NULL,
+    ""PhotoUrl"" TEXT NULL,
+    ""IsActive"" BOOLEAN NOT NULL DEFAULT TRUE,
+    ""IsSystemAccount"" BOOLEAN NOT NULL DEFAULT FALSE,
+    ""UpdatedAt"" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS ""IX_StaffDirectory_Active_System_FullName""
+ON ""StaffDirectory"" (""IsActive"", ""IsSystemAccount"", ""FullName"");
+
+CREATE INDEX IF NOT EXISTS ""IX_StaffDirectory_Department_Team""
+ON ""StaffDirectory"" (""DepartmentName"", ""TeamName"");
 
 CREATE TABLE IF NOT EXISTS ""SyncState"" (
     ""Name"" text PRIMARY KEY,
@@ -844,6 +1020,43 @@ IF NOT EXISTS (
 )
 BEGIN
     CREATE INDEX IX_StudentDirectoryMirror_Active_FullName ON dbo.StudentDirectoryMirror(IsActive, FullName);
+END;
+
+IF OBJECT_ID(N'dbo.StaffDirectoryMirror', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.StaffDirectoryMirror (
+        Id INT NOT NULL PRIMARY KEY,
+        StaffCode NVARCHAR(50) NOT NULL,
+        FullName NVARCHAR(200) NOT NULL,
+        DepartmentName NVARCHAR(100) NOT NULL,
+        TeamName NVARCHAR(100) NOT NULL,
+        Designation NVARCHAR(120) NOT NULL,
+        PhotoUrl NVARCHAR(MAX) NULL,
+        IsActive BIT NOT NULL,
+        IsSystemAccount BIT NOT NULL,
+        UpdatedAt DATETIMEOFFSET(0) NOT NULL,
+        LastSyncedAt DATETIMEOFFSET(0) NOT NULL CONSTRAINT DF_StaffDirectoryMirror_LastSyncedAt DEFAULT SYSUTCDATETIME()
+    );
+END;
+
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = N'IX_StaffDirectoryMirror_Active_System_FullName'
+      AND object_id = OBJECT_ID(N'dbo.StaffDirectoryMirror')
+)
+BEGIN
+    CREATE INDEX IX_StaffDirectoryMirror_Active_System_FullName ON dbo.StaffDirectoryMirror(IsActive, IsSystemAccount, FullName);
+END;
+
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = N'IX_StaffDirectoryMirror_Department_Team'
+      AND object_id = OBJECT_ID(N'dbo.StaffDirectoryMirror')
+)
+BEGIN
+    CREATE INDEX IX_StaffDirectoryMirror_Department_Team ON dbo.StaffDirectoryMirror(DepartmentName, TeamName);
 END;";
 
             await using var command = new SqlCommand(sql, connection);
@@ -908,6 +1121,20 @@ END;";
         public string SectionName { get; init; } = string.Empty;
         public string? PhotoUrl { get; init; }
         public bool IsActive { get; init; }
+        public DateTime UpdatedAtUtc { get; init; }
+    }
+
+    internal sealed class StaffSourceRow
+    {
+        public int Id { get; init; }
+        public string StaffCode { get; init; } = string.Empty;
+        public string FullName { get; init; } = string.Empty;
+        public string DepartmentName { get; init; } = string.Empty;
+        public string TeamName { get; init; } = string.Empty;
+        public string Designation { get; init; } = string.Empty;
+        public string? PhotoUrl { get; init; }
+        public bool IsActive { get; init; }
+        public bool IsSystemAccount { get; init; }
         public DateTime UpdatedAtUtc { get; init; }
     }
 }

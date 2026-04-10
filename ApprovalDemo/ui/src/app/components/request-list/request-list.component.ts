@@ -2,7 +2,7 @@ import { Component, OnInit, ChangeDetectorRef, HostListener } from '@angular/cor
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApprovalService } from '../../services/approval.service';
-import { ApprovalRequest, StudentDirectoryItem } from '../../models/approval.model';
+import { ApprovalRequest, StaffDirectoryItem, StudentDirectoryItem } from '../../models/approval.model';
 
 @Component({
   selector: 'app-request-list',
@@ -36,6 +36,7 @@ import { ApprovalRequest, StudentDirectoryItem } from '../../models/approval.mod
             <p class="sidebar-label">Training Tasks</p>
             <button class="sidebar-link" [class.active]="activeTask === 'task2'" (click)="switchTask('task2')">Task 2</button>
             <button class="sidebar-link" [class.active]="activeTask === 'task9'" (click)="switchTask('task9')">Task 9</button>
+            <button class="sidebar-link" [class.active]="activeTask === 'task10'" (click)="switchTask('task10')">Task 10</button>
           </aside>
 
           <main class="content-panel">
@@ -47,6 +48,11 @@ import { ApprovalRequest, StudentDirectoryItem } from '../../models/approval.mod
             <header class="content-header" *ngIf="activeTask === 'task9'">
               <p class="eyebrow">Student Observation</p>
               <p class="subtitle">Select active students by grade/section or direct search, then review selected profiles.</p>
+            </header>
+
+            <header class="content-header" *ngIf="activeTask === 'task10'">
+              <p class="eyebrow">Staff Observation</p>
+              <p class="subtitle">Select active staff only, automatically excluding system accounts.</p>
             </header>
 
             <ng-container *ngIf="activeTask === 'task2'">
@@ -262,6 +268,151 @@ import { ApprovalRequest, StudentDirectoryItem } from '../../models/approval.mod
                 <p *ngIf="selectedStudents.length === 0" class="no-data">No students selected yet.</p>
               </section>
             </ng-container>
+
+            <ng-container *ngIf="activeTask === 'task10'">
+              <div class="student-filters">
+                <div class="student-filter-item">
+                  <label for="department-select">Select Department(s)</label>
+                  <div class="multi-dropdown" (click)="$event.stopPropagation()">
+                    <button type="button" id="department-select" class="multi-dropdown-toggle" (click)="toggleDepartmentDropdown()">
+                      <span>{{ departmentSelectionSummary }}</span>
+                      <span class="caret">▾</span>
+                    </button>
+                    <div class="multi-dropdown-menu" *ngIf="departmentDropdownOpen">
+                      <label class="multi-option">
+                        <input type="checkbox" [checked]="isAllDepartmentsSelected" (change)="toggleAllDepartments($event)" />
+                        <span>Check All</span>
+                      </label>
+                      <label class="multi-option" *ngFor="let department of departmentOptions">
+                        <input type="checkbox" [checked]="selectedDepartments.includes(department)" (change)="toggleDepartmentSelection(department, $event)" />
+                        <span>{{ department }}</span>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="student-filter-item">
+                  <label for="team-select">Select Team(s)</label>
+                  <div class="multi-dropdown" (click)="$event.stopPropagation()">
+                    <button type="button" id="team-select" class="multi-dropdown-toggle" (click)="toggleTeamDropdown()">
+                      <span>{{ teamSelectionSummary }}</span>
+                      <span class="caret">▾</span>
+                    </button>
+                    <div class="multi-dropdown-menu" *ngIf="teamDropdownOpen">
+                      <label class="multi-option">
+                        <input type="checkbox" [checked]="isAllTeamsSelected" (change)="toggleAllTeams($event)" />
+                        <span>Check All</span>
+                      </label>
+                      <label class="multi-option" *ngFor="let team of teamOptions">
+                        <input type="checkbox" [checked]="selectedTeams.includes(team)" (change)="toggleTeamSelection(team, $event)" />
+                        <span>{{ team }}</span>
+                      </label>
+                      <p class="multi-empty" *ngIf="selectedDepartments.length === 0">Select department first to load teams</p>
+                      <p class="multi-empty" *ngIf="selectedDepartments.length > 0 && teamOptions.length === 0">No teams available</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="student-search-box">
+                  <label for="staff-search">Search Staff</label>
+                  <input
+                    id="staff-search"
+                    type="text"
+                    [(ngModel)]="staffSearch"
+                    (ngModelChange)="onStaffSearchChanged()"
+                    [disabled]="selectedDepartments.length === 0"
+                    placeholder="Name, code or designation"
+                    aria-label="Search staff"
+                  />
+                </div>
+              </div>
+
+              <div class="student-picker-row">
+                <div class="student-filter-item student-picker-field">
+                  <label for="staff-picker">Select Staff</label>
+                  <div class="multi-dropdown" (click)="$event.stopPropagation()">
+                    <button type="button" id="staff-picker" class="multi-dropdown-toggle" (click)="toggleStaffDropdown()">
+                      <span>{{ staffSelectionSummary }}</span>
+                      <span class="caret">▾</span>
+                    </button>
+                    <div class="multi-dropdown-menu student-menu" *ngIf="staffDropdownOpen">
+                      <label class="multi-option" *ngIf="selectableStaff.length > 0">
+                        <input type="checkbox" [checked]="isAllStaffSelected" (change)="toggleAllStaff($event)" />
+                        <span>Check All</span>
+                      </label>
+                      <label class="multi-option" *ngFor="let staff of selectableStaff">
+                        <input type="checkbox" [checked]="pendingStaffIds.includes(staff.id)" (change)="toggleStaffSelection(staff.id, $event)" />
+                        <span>{{ staff.fullName }} ({{ staff.staffCode }})</span>
+                      </label>
+                      <p class="multi-empty" *ngIf="selectedDepartments.length === 0">Select department first to load staff</p>
+                      <p class="multi-empty" *ngIf="selectedDepartments.length > 0 && selectableStaff.length === 0">No staff available</p>
+                    </div>
+                  </div>
+                </div>
+                <button class="btn btn-approve" (click)="addPendingStaff()" [disabled]="pendingStaffIds.length === 0">Add Selected</button>
+              </div>
+
+              <div *ngIf="staffLoading" class="loader-box">
+                <div class="spinner"></div>
+                <p>Loading staff...</p>
+              </div>
+
+              <div *ngIf="!staffLoading" class="student-grid">
+                <article
+                  *ngFor="let staff of staffResults"
+                  class="student-card"
+                  [class.selected]="isStaffSelected(staff.id)">
+                  <img [src]="resolveStaffPhoto(staff)" [alt]="staff.fullName" (error)="onStaffImageError($event, staff)" loading="lazy" />
+                  <div>
+                    <p class="student-name">{{ staff.fullName }}</p>
+                    <p class="student-meta">{{ staff.staffCode }} | {{ staff.departmentName }} - {{ staff.teamName }} | {{ staff.designation }}</p>
+                  </div>
+                  <button class="remove-selected" (click)="addStaff(staff, $event)" [disabled]="isStaffSelected(staff.id)">
+                    {{ isStaffSelected(staff.id) ? 'Added' : 'Add' }}
+                  </button>
+                </article>
+              </div>
+
+              <p *ngIf="!staffLoading && selectedDepartments.length === 0" class="no-data">
+                Select at least one department to load teams and staff.
+              </p>
+
+              <p *ngIf="!staffLoading && selectedDepartments.length > 0 && staffResults.length === 0" class="no-data">
+                No staff match your filters.
+              </p>
+
+              <div *ngIf="staffTotal > 0" class="pagination-row">
+                <p class="page-summary">
+                  Showing {{ staffPageStart }}-{{ staffPageEnd }} of {{ staffTotal }} staff
+                </p>
+
+                <div class="page-actions">
+                  <button class="btn btn-page" (click)="goToPreviousStaffPage()" [disabled]="staffPage === 1">Previous</button>
+                  <span class="page-indicator">Page {{ staffPage }} / {{ staffTotalPages }}</span>
+                  <button class="btn btn-page" (click)="goToNextStaffPage()" [disabled]="staffPage === staffTotalPages">Next</button>
+                </div>
+              </div>
+
+              <section class="selected-students-panel">
+                <div class="selected-header">
+                  <h3>Selected Staff ({{ selectedStaff.length }})</h3>
+                  <button class="btn btn-page" (click)="clearSelectedStaff()" [disabled]="selectedStaff.length === 0">Clear All</button>
+                </div>
+
+                <div class="selected-grid" *ngIf="selectedStaff.length > 0">
+                  <article *ngFor="let staff of selectedStaff" class="selected-card">
+                    <img [src]="resolveStaffPhoto(staff)" [alt]="staff.fullName" (error)="onStaffImageError($event, staff)" loading="lazy" />
+                    <div>
+                      <p class="student-name">{{ staff.fullName }}</p>
+                      <p class="student-meta">{{ staff.staffCode }} | {{ staff.departmentName }} - {{ staff.teamName }} | {{ staff.designation }}</p>
+                    </div>
+                    <button class="remove-selected" (click)="removeSelectedStaff(staff.id, $event)">Remove</button>
+                  </article>
+                </div>
+
+                <p *ngIf="selectedStaff.length === 0" class="no-data">No staff selected yet.</p>
+              </section>
+            </ng-container>
           </main>
         </div>
       </div>
@@ -287,7 +438,7 @@ import { ApprovalRequest, StudentDirectoryItem } from '../../models/approval.mod
   styleUrl: './request-list.component.scss'
 })
 export class RequestListComponent implements OnInit {
-  activeTask: 'task2' | 'task9' = 'task2';
+  activeTask: 'task2' | 'task9' | 'task10' = 'task2';
 
   requests: ApprovalRequest[] = [];
   loading = true;
@@ -322,6 +473,25 @@ export class RequestListComponent implements OnInit {
   private readonly maleAvatar = this.buildAvatarDataUri('#d7ecff', '#1b5f8c');
   private readonly femaleAvatar = this.buildAvatarDataUri('#ffe0ee', '#8a2f5a');
   private studentSearchDebounceId: number | null = null;
+
+  departmentOptions: string[] = [];
+  teamOptions: string[] = [];
+  selectedDepartments: string[] = [];
+  selectedTeams: string[] = [];
+  staffSearch = '';
+  staffResults: StaffDirectoryItem[] = [];
+  selectedStaff: StaffDirectoryItem[] = [];
+  selectedStaffIds = new Set<number>();
+  pendingStaffIds: number[] = [];
+  departmentDropdownOpen = false;
+  teamDropdownOpen = false;
+  staffDropdownOpen = false;
+  staffLoading = false;
+  staffPage = 1;
+  staffPageSize = 24;
+  staffTotal = 0;
+  private failedPhotoStaffIds = new Set<number>();
+  private staffSearchDebounceId: number | null = null;
 
   get filteredRequests(): ApprovalRequest[] {
     const term = this.searchTerm.trim().toLowerCase();
@@ -365,10 +535,16 @@ export class RequestListComponent implements OnInit {
     console.log('RequestListComponent initialized');
     this.loadRequests();
     this.loadGrades();
+    this.loadDepartments();
   }
 
-  switchTask(task: 'task2' | 'task9'): void {
+  switchTask(task: 'task2' | 'task9' | 'task10'): void {
     this.activeTask = task;
+
+    if (task === 'task10' && this.departmentOptions.length === 0) {
+      this.loadDepartments();
+    }
+
     this.cdr.detectChanges();
   }
 
@@ -524,6 +700,9 @@ export class RequestListComponent implements OnInit {
     this.gradeDropdownOpen = false;
     this.sectionDropdownOpen = false;
     this.studentDropdownOpen = false;
+    this.departmentDropdownOpen = false;
+    this.teamDropdownOpen = false;
+    this.staffDropdownOpen = false;
   }
 
   get gradeSelectionSummary(): string {
@@ -751,6 +930,254 @@ export class RequestListComponent implements OnInit {
     image.src = this.resolveStudentPhoto(student);
   }
 
+  onDepartmentsChanged(): void {
+    this.selectedTeams = [];
+    this.pendingStaffIds = [];
+
+    if (this.selectedDepartments.length === 0) {
+      this.teamOptions = [];
+      this.staffSearch = '';
+      this.staffResults = [];
+      this.staffTotal = 0;
+      this.teamDropdownOpen = false;
+      this.staffDropdownOpen = false;
+      this.cdr.detectChanges();
+      return;
+    }
+
+    this.loadTeams();
+    this.reloadStaffFromStart();
+  }
+
+  onTeamsChanged(): void {
+    this.reloadStaffFromStart();
+  }
+
+  get departmentSelectionSummary(): string {
+    if (this.selectedDepartments.length === 0) {
+      return 'Select department';
+    }
+    return this.selectedDepartments.join(', ');
+  }
+
+  get teamSelectionSummary(): string {
+    if (this.selectedTeams.length === 0) {
+      return 'Select team';
+    }
+    return this.selectedTeams.join(', ');
+  }
+
+  get staffSelectionSummary(): string {
+    if (this.pendingStaffIds.length === 0) {
+      return 'Select staff';
+    }
+
+    const selectedNames = this.selectableStaff
+      .filter((staff) => this.pendingStaffIds.includes(staff.id))
+      .map((staff) => staff.fullName);
+
+    if (selectedNames.length === 0) {
+      return `${this.pendingStaffIds.length} selected`;
+    }
+
+    return selectedNames.join(', ');
+  }
+
+  get isAllDepartmentsSelected(): boolean {
+    return this.departmentOptions.length > 0 && this.selectedDepartments.length === this.departmentOptions.length;
+  }
+
+  get isAllTeamsSelected(): boolean {
+    return this.teamOptions.length > 0 && this.selectedTeams.length === this.teamOptions.length;
+  }
+
+  get isAllStaffSelected(): boolean {
+    return this.selectableStaff.length > 0 && this.pendingStaffIds.length === this.selectableStaff.length;
+  }
+
+  toggleDepartmentDropdown(): void {
+    this.departmentDropdownOpen = !this.departmentDropdownOpen;
+    this.teamDropdownOpen = false;
+    this.staffDropdownOpen = false;
+  }
+
+  toggleTeamDropdown(): void {
+    this.teamDropdownOpen = !this.teamDropdownOpen;
+    this.departmentDropdownOpen = false;
+    this.staffDropdownOpen = false;
+  }
+
+  toggleStaffDropdown(): void {
+    this.staffDropdownOpen = !this.staffDropdownOpen;
+    this.departmentDropdownOpen = false;
+    this.teamDropdownOpen = false;
+  }
+
+  toggleAllDepartments(event: Event): void {
+    const checked = (event.target as HTMLInputElement).checked;
+    this.selectedDepartments = checked ? [...this.departmentOptions] : [];
+    this.onDepartmentsChanged();
+  }
+
+  toggleDepartmentSelection(department: string, event: Event): void {
+    const checked = (event.target as HTMLInputElement).checked;
+    this.selectedDepartments = checked
+      ? [...this.selectedDepartments, department]
+      : this.selectedDepartments.filter((value) => value !== department);
+    this.onDepartmentsChanged();
+  }
+
+  toggleAllTeams(event: Event): void {
+    const checked = (event.target as HTMLInputElement).checked;
+    this.selectedTeams = checked ? [...this.teamOptions] : [];
+    this.onTeamsChanged();
+  }
+
+  toggleTeamSelection(team: string, event: Event): void {
+    const checked = (event.target as HTMLInputElement).checked;
+    this.selectedTeams = checked
+      ? [...this.selectedTeams, team]
+      : this.selectedTeams.filter((value) => value !== team);
+    this.onTeamsChanged();
+  }
+
+  toggleAllStaff(event: Event): void {
+    const checked = (event.target as HTMLInputElement).checked;
+    this.pendingStaffIds = checked ? this.selectableStaff.map((staff) => staff.id) : [];
+  }
+
+  toggleStaffSelection(staffId: number, event: Event): void {
+    const checked = (event.target as HTMLInputElement).checked;
+    this.pendingStaffIds = checked
+      ? [...this.pendingStaffIds, staffId]
+      : this.pendingStaffIds.filter((id) => id !== staffId);
+  }
+
+  onStaffSearchChanged(): void {
+    if (this.selectedDepartments.length === 0) {
+      this.staffResults = [];
+      this.staffTotal = 0;
+      this.pendingStaffIds = [];
+      this.cdr.detectChanges();
+      return;
+    }
+
+    if (this.staffSearchDebounceId !== null) {
+      window.clearTimeout(this.staffSearchDebounceId);
+    }
+
+    this.staffSearchDebounceId = window.setTimeout(() => {
+      this.reloadStaffFromStart();
+      this.staffSearchDebounceId = null;
+    }, 260);
+  }
+
+  reloadStaffFromStart(): void {
+    this.staffPage = 1;
+    this.loadStaff();
+  }
+
+  get staffTotalPages(): number {
+    return Math.max(1, Math.ceil(this.staffTotal / this.staffPageSize));
+  }
+
+  get staffPageStart(): number {
+    if (this.staffTotal === 0) {
+      return 0;
+    }
+    return (this.staffPage - 1) * this.staffPageSize + 1;
+  }
+
+  get staffPageEnd(): number {
+    return Math.min(this.staffPage * this.staffPageSize, this.staffTotal);
+  }
+
+  goToPreviousStaffPage(): void {
+    if (this.staffPage > 1) {
+      this.staffPage -= 1;
+      this.loadStaff();
+    }
+  }
+
+  goToNextStaffPage(): void {
+    if (this.staffPage < this.staffTotalPages) {
+      this.staffPage += 1;
+      this.loadStaff();
+    }
+  }
+
+  isStaffSelected(staffId: number): boolean {
+    return this.selectedStaffIds.has(staffId);
+  }
+
+  addStaff(staff: StaffDirectoryItem, event?: Event): void {
+    if (event) {
+      event.stopPropagation();
+    }
+
+    if (this.selectedStaffIds.has(staff.id)) {
+      return;
+    }
+
+    this.selectedStaffIds.add(staff.id);
+    this.selectedStaff = [...this.selectedStaff, staff];
+    this.pendingStaffIds = this.pendingStaffIds.filter((id) => id !== staff.id);
+    this.cdr.detectChanges();
+  }
+
+  addPendingStaff(): void {
+    if (this.pendingStaffIds.length === 0) {
+      return;
+    }
+
+    const staffToAdd = this.staffResults.filter((staff) => this.pendingStaffIds.includes(staff.id));
+    if (staffToAdd.length === 0) {
+      this.showToastMessage('Selected staff are not available on this page. Adjust filters and try again.', 'info');
+      return;
+    }
+
+    for (const staff of staffToAdd) {
+      if (!this.selectedStaffIds.has(staff.id)) {
+        this.selectedStaffIds.add(staff.id);
+        this.selectedStaff = [...this.selectedStaff, staff];
+      }
+    }
+
+    this.pendingStaffIds = [];
+    this.cdr.detectChanges();
+  }
+
+  removeSelectedStaff(staffId: number, event: Event): void {
+    event.stopPropagation();
+    this.selectedStaffIds.delete(staffId);
+    this.selectedStaff = this.selectedStaff.filter((staff) => staff.id !== staffId);
+    this.cdr.detectChanges();
+  }
+
+  clearSelectedStaff(): void {
+    this.selectedStaffIds.clear();
+    this.selectedStaff = [];
+    this.pendingStaffIds = [];
+    this.cdr.detectChanges();
+  }
+
+  get selectableStaff(): StaffDirectoryItem[] {
+    return this.staffResults.filter((staff) => !this.selectedStaffIds.has(staff.id));
+  }
+
+  resolveStaffPhoto(staff: StaffDirectoryItem): string {
+    if (staff.photoUrl && !this.failedPhotoStaffIds.has(staff.id)) {
+      return staff.photoUrl;
+    }
+    return this.isLikelyFemaleByName(staff.fullName) ? this.femaleAvatar : this.maleAvatar;
+  }
+
+  onStaffImageError(event: Event, staff: StaffDirectoryItem): void {
+    this.failedPhotoStaffIds.add(staff.id);
+    const image = event.target as HTMLImageElement;
+    image.src = this.resolveStaffPhoto(staff);
+  }
+
   private loadGrades(): void {
     this.approvalService.getGrades('', 100).subscribe({
       next: (data) => {
@@ -818,8 +1245,80 @@ export class RequestListComponent implements OnInit {
     });
   }
 
+  private loadDepartments(): void {
+    this.approvalService.getDepartments('', 100).subscribe({
+      next: (data) => {
+        this.departmentOptions = data;
+        this.cdr.detectChanges();
+      },
+      error: () => {
+        this.showToastMessage('Could not load departments.', 'error');
+      }
+    });
+  }
+
+  private loadTeams(): void {
+    if (this.selectedDepartments.length === 0) {
+      this.teamOptions = [];
+      this.selectedTeams = [];
+      this.cdr.detectChanges();
+      return;
+    }
+
+    this.approvalService.getTeams(this.selectedDepartments, '', 100).subscribe({
+      next: (data) => {
+        this.teamOptions = data;
+        this.cdr.detectChanges();
+      },
+      error: () => {
+        this.showToastMessage('Could not load teams.', 'error');
+      }
+    });
+  }
+
+  private loadStaff(): void {
+    if (this.selectedDepartments.length === 0) {
+      this.staffLoading = false;
+      this.staffResults = [];
+      this.staffTotal = 0;
+      this.pendingStaffIds = [];
+      this.cdr.detectChanges();
+      return;
+    }
+
+    this.staffLoading = true;
+    this.approvalService.getStaff({
+      departments: this.selectedDepartments,
+      teams: this.selectedTeams,
+      search: this.staffSearch,
+      page: this.staffPage,
+      pageSize: this.staffPageSize,
+      onlyActive: true,
+      excludeSystemAccounts: true
+    }).subscribe({
+      next: (result) => {
+        this.staffResults = result.items;
+        this.staffTotal = result.total;
+        this.pendingStaffIds = this.pendingStaffIds.filter((id) => this.staffResults.some((staff) => staff.id === id));
+        this.staffLoading = false;
+        this.cdr.detectChanges();
+      },
+      error: () => {
+        this.staffResults = [];
+        this.staffTotal = 0;
+        this.staffLoading = false;
+        this.showToastMessage('Could not load staff.', 'error');
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
   private isLikelyFemale(student: StudentDirectoryItem): boolean {
-    const firstName = (student.fullName.split(' ')[0] ?? '').toLowerCase();
+    return this.isLikelyFemaleByName(student.fullName);
+  }
+
+  private isLikelyFemaleByName(fullName: string): boolean {
+    const firstName = (fullName.split(' ')[0] ?? '').toLowerCase();
     const knownFemaleNames = ['aadya', 'aaeesha', 'diya', 'ira', 'mira', 'riya', 'anaya', 'siya'];
     if (knownFemaleNames.includes(firstName)) {
       return true;
@@ -829,7 +1328,7 @@ export class RequestListComponent implements OnInit {
       return true;
     }
 
-    return student.id % 2 === 0;
+    return false;
   }
 
   private buildAvatarDataUri(background: string, foreground: string): string {

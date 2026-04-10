@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
-import { ApprovalRequest, CreateRequestDto, DecisionDto, PagedResult, StudentDirectoryItem } from '../models/approval.model';
+import { ApprovalRequest, CreateRequestDto, DecisionDto, PagedResult, StaffDirectoryItem, StudentDirectoryItem } from '../models/approval.model';
 
 @Injectable({
   providedIn: 'root'
@@ -9,6 +9,7 @@ import { ApprovalRequest, CreateRequestDto, DecisionDto, PagedResult, StudentDir
 export class ApprovalService {
   private apiUrl = 'https://it-sw-training-approval-backend.onrender.com/api/approval-requests';
   private studentApiUrl = 'https://it-sw-training-approval-backend.onrender.com/api/students';
+  private staffApiUrl = 'https://it-sw-training-approval-backend.onrender.com/api/staff';
 
   constructor(private http: HttpClient) { }
 
@@ -69,5 +70,48 @@ export class ApprovalService {
   getStudentsByIds(ids: number[]): Observable<StudentDirectoryItem[]> {
     const csv = ids.join(',');
     return this.http.get<StudentDirectoryItem[]>(`${this.studentApiUrl}/by-ids?ids=${encodeURIComponent(csv)}`);
+  }
+
+  getDepartments(search = '%', limit = 50): Observable<string[]> {
+    const effectiveSearch = search && search.trim().length > 0 ? search : '%';
+    return this.http.get<string[]>(`${this.staffApiUrl}/departments?search=${encodeURIComponent(effectiveSearch)}&limit=${limit}`);
+  }
+
+  getTeams(departments: string[] = [], search = '%', limit = 50): Observable<string[]> {
+    const effectiveSearch = search && search.trim().length > 0 ? search : '%';
+    const departmentsCsv = encodeURIComponent(departments.join(','));
+    return this.http.get<string[]>(
+      `${this.staffApiUrl}/teams?departments=${departmentsCsv}&search=${encodeURIComponent(effectiveSearch)}&limit=${limit}`
+    );
+  }
+
+  getStaff(params: {
+    departments?: string[];
+    teams?: string[];
+    search?: string;
+    page?: number;
+    pageSize?: number;
+    onlyActive?: boolean;
+    excludeSystemAccounts?: boolean;
+  }): Observable<PagedResult<StaffDirectoryItem>> {
+    const departments = encodeURIComponent((params.departments ?? []).join(','));
+    const teams = encodeURIComponent((params.teams ?? []).join(','));
+    const effectiveSearch = params.search && params.search.trim().length > 0 ? params.search : '%';
+    const search = encodeURIComponent(effectiveSearch);
+    const page = params.page ?? 1;
+    const pageSize = params.pageSize ?? 24;
+    const onlyActive = params.onlyActive ?? true;
+    const excludeSystemAccounts = params.excludeSystemAccounts ?? true;
+
+    return this.http.get<PagedResult<StaffDirectoryItem>>(
+      `${this.staffApiUrl}/directory?departments=${departments}&teams=${teams}&search=${search}&page=${page}&pageSize=${pageSize}&onlyActive=${onlyActive}&excludeSystemAccounts=${excludeSystemAccounts}`
+    );
+  }
+
+  getStaffByIds(ids: number[], excludeSystemAccounts = true): Observable<StaffDirectoryItem[]> {
+    const csv = ids.join(',');
+    return this.http.get<StaffDirectoryItem[]>(
+      `${this.staffApiUrl}/by-ids?ids=${encodeURIComponent(csv)}&excludeSystemAccounts=${excludeSystemAccounts}`
+    );
   }
 }

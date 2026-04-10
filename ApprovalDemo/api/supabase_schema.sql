@@ -66,6 +66,26 @@ CREATE TABLE IF NOT EXISTS "SyncReconciliationReport"
     "Summary" text NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS "StaffDirectory"
+(
+    "Id" serial PRIMARY KEY,
+    "StaffCode" varchar(50) NOT NULL UNIQUE,
+    "FullName" varchar(200) NOT NULL,
+    "DepartmentName" varchar(100) NOT NULL,
+    "TeamName" varchar(100) NOT NULL,
+    "Designation" varchar(120) NOT NULL,
+    "PhotoUrl" text NULL,
+    "IsActive" boolean NOT NULL DEFAULT true,
+    "IsSystemAccount" boolean NOT NULL DEFAULT false,
+    "UpdatedAt" timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS "IX_StaffDirectory_Active_System_FullName"
+ON "StaffDirectory" ("IsActive", "IsSystemAccount", "FullName");
+
+CREATE INDEX IF NOT EXISTS "IX_StaffDirectory_Department_Team"
+ON "StaffDirectory" ("DepartmentName", "TeamName");
+
 -- Optional: sample seed data (pending requests)
 INSERT INTO "ApprovalRequest" ("Title", "RequestedBy", "Status", "CreatedAt", "UpdatedAt", "IsDeleted", "OperationId")
 VALUES
@@ -94,3 +114,18 @@ VALUES
 ('Client Demo Event Expenses', 'Yash Khanna', 0, now() - interval '60 minutes', now() - interval '60 minutes', false, gen_random_uuid()),
 ('GitHub Copilot Team Subscription', 'Manav Sethi', 0, now() - interval '45 minutes', now() - interval '45 minutes', false, gen_random_uuid()),
 ('Ergonomic Keyboard Purchase', 'Tanya Chawla', 0, now() - interval '30 minutes', now() - interval '30 minutes', false, gen_random_uuid());
+
+INSERT INTO "StaffDirectory" ("StaffCode", "FullName", "DepartmentName", "TeamName", "Designation", "PhotoUrl", "IsActive", "IsSystemAccount")
+VALUES
+('STF-1001', 'Lavesh Paryani', 'Academics', 'Grade 7', 'Teacher', 'https://i.pravatar.cc/120?img=61', true, false),
+('STF-1002', 'Lubaina Faizullabhai', 'Academics', 'Grade 6', 'Teacher', 'https://i.pravatar.cc/120?img=62', true, false),
+('STF-1003', 'Lulua Bandookwala', 'Academics', 'Grade 5', 'Teacher', 'https://i.pravatar.cc/120?img=63', true, false),
+('STF-1004', 'Maheen Khan', 'Academics', 'Math', 'Teacher', 'https://i.pravatar.cc/120?img=64', true, false),
+('STF-1005', 'Mahek Kothari', 'Academics', 'Science', 'Teacher', 'https://i.pravatar.cc/120?img=65', true, false),
+('STF-1006', 'Mahmood Yacoobali', 'Operations', 'Transport', 'Coordinator', 'https://i.pravatar.cc/120?img=66', true, false),
+('STF-1007', 'Malhar Trivedi', 'Technology', 'IT', 'Administrator', 'https://i.pravatar.cc/120?img=67', true, false),
+('STF-1008', 'Manish Tiwari', 'Technology', 'IT', 'Support Engineer', 'https://i.pravatar.cc/120?img=68', true, false),
+('STF-1009', 'Manisha Guha', 'Academics', 'English', 'Teacher', 'https://i.pravatar.cc/120?img=69', true, false),
+('STF-1010', 'Manisha Naik', 'Academics', 'Primary', 'Teacher', 'https://i.pravatar.cc/120?img=70', true, false),
+('STF-9999', 'SYSTEM ACCOUNT', 'System', 'Platform', 'Service User', null, true, true)
+ON CONFLICT ("StaffCode") DO NOTHING;

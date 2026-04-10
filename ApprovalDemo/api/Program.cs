@@ -63,6 +63,7 @@ builder.Services.AddSwaggerGen();
 // Register Repository
 builder.Services.AddScoped<ApprovalRepository>();
 builder.Services.AddScoped<StudentRepository>();
+builder.Services.AddScoped<StaffRepository>();
 builder.Services.AddSingleton<ApprovalSyncService>();
 var enableMssqlSync = !string.Equals(
     Environment.GetEnvironmentVariable("ENABLE_MSSQL_SYNC") ?? builder.Configuration["ENABLE_MSSQL_SYNC"],
@@ -192,7 +193,9 @@ app.MapControllers();
 using (var scope = app.Services.CreateScope())
 {
     var studentRepository = scope.ServiceProvider.GetRequiredService<StudentRepository>();
+    var staffRepository = scope.ServiceProvider.GetRequiredService<StaffRepository>();
     await studentRepository.EnsureSchemaAndSeedAsync(CancellationToken.None);
+    await staffRepository.EnsureSchemaAndSeedAsync(CancellationToken.None);
 
     if (enableMssqlSync)
     {

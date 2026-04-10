@@ -29,6 +29,18 @@ export interface StudentDirectoryItem {
   isActive: boolean;
 }
 
+export interface StaffDirectoryItem {
+  id: number;
+  staffCode: string;
+  fullName: string;
+  departmentName: string;
+  teamName: string;
+  designation: string;
+  photoUrl?: string;
+  isActive: boolean;
+  isSystemAccount: boolean;
+}
+
 export interface PagedResult<T> {
   items: T[];
   total: number;
