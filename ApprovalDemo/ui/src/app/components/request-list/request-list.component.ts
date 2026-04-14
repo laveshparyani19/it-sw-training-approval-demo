@@ -2,7 +2,7 @@ import { Component, OnInit, ChangeDetectorRef, HostListener } from '@angular/cor
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApprovalService } from '../../services/approval.service';
-import { ApprovalRequest, CreateTlTeamAssignmentDto, StaffDirectoryItem, StudentDirectoryItem, TeamOptionItem, TlTeamAssignmentItem } from '../../models/approval.model';
+import { ApprovalRequest, CreateTlTeamAssignmentDto, StaffDirectoryItem, StudentDirectoryItem, Task8ReportResponse, TeamOptionItem, TlTeamAssignmentItem } from '../../models/approval.model';
 
 @Component({
   selector: 'app-request-list',
@@ -36,6 +36,7 @@ import { ApprovalRequest, CreateTlTeamAssignmentDto, StaffDirectoryItem, Student
             <p class="sidebar-label">Training Tasks</p>
             <button class="sidebar-link" [class.active]="activeTask === 'task2'" (click)="switchTask('task2')">Task 2</button>
             <button class="sidebar-link" [class.active]="activeTask === 'task9'" (click)="switchTask('task9')">Task 9</button>
+            <button class="sidebar-link" [class.active]="activeTask === 'task8'" (click)="switchTask('task8')">Task 8</button>
             <button class="sidebar-link" [class.active]="activeTask === 'task10'" (click)="switchTask('task10')">Task 10</button>
             <button class="sidebar-link" [class.active]="activeTask === 'task11'" (click)="switchTask('task11')">Task 11</button>
           </aside>
@@ -49,6 +50,11 @@ import { ApprovalRequest, CreateTlTeamAssignmentDto, StaffDirectoryItem, Student
             <header class="content-header" *ngIf="activeTask === 'task9'">
               <p class="eyebrow">Student Observation</p>
               <p class="subtitle">Select active students by grade/section or direct search, then review selected profiles.</p>
+            </header>
+
+            <header class="content-header" *ngIf="activeTask === 'task8'">
+              <p class="eyebrow">Task 8 — Reporting lab</p>
+              <p class="subtitle">Run each school report on demand. Tables support search and paging. Report 7 can read from the SQL Server mirror after sync.</p>
             </header>
 
             <header class="content-header" *ngIf="activeTask === 'task10'">
@@ -273,6 +279,87 @@ import { ApprovalRequest, CreateTlTeamAssignmentDto, StaffDirectoryItem, Student
 
                 <p *ngIf="selectedStudents.length === 0" class="no-data">No students selected yet.</p>
               </section>
+            </ng-container>
+
+            <ng-container *ngIf="activeTask === 'task8'">
+              <div class="task8-panel">
+                <div class="task8-grid" role="group" aria-label="Task 8 reports">
+                  <button
+                    type="button"
+                    class="task8-chip"
+                    *ngFor="let r of task8Reports"
+                    [class.active]="task8ActiveReportId === r.id"
+                    (click)="runTask8Report(r.id)">
+                    <span class="task8-chip-id">{{ r.id }}</span>
+                    <span class="task8-chip-text">{{ r.label }}</span>
+                  </button>
+                </div>
+
+                <label class="task8-mirror" *ngIf="task8ActiveReportId === 7">
+                  <input type="checkbox" [(ngModel)]="task8UseMssqlMirror" (ngModelChange)="onTask8MirrorToggled()" />
+                  <span>Read active students from SQL Server mirror (same columns as <code>sp_Task8_ActiveStudentsDetail</code>)</span>
+                </label>
+
+                <div class="task8-toolbar" *ngIf="task8ActiveReportId !== null">
+                  <div class="search-box task8-search">
+                    <input
+                      type="search"
+                      [(ngModel)]="task8Search"
+                      (ngModelChange)="onTask8SearchChange()"
+                      placeholder="Search within columns…"
+                      aria-label="Filter report rows"
+                    />
+                  </div>
+                  <div class="control-right">
+                    <label for="task8-page-size">Rows per page</label>
+                    <select id="task8-page-size" [(ngModel)]="task8PageSize" (ngModelChange)="onTask8PageSizeChange()">
+                      <option *ngFor="let s of task8PageSizeOptions" [ngValue]="s">{{ s }}</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div *ngIf="task8Loading" class="loader-box">
+                  <div class="spinner"></div>
+                  <p>Loading report…</p>
+                </div>
+
+                <div *ngIf="!task8Loading && task8Report" class="task8-results">
+                  <h3 class="task8-report-title">{{ task8Report.title }}</h3>
+                  <p class="task8-source-note" *ngIf="task8Report.dataSourceNote">{{ task8Report.dataSourceNote }}</p>
+                  <div class="table-wrap">
+                    <table class="approval-table task8-table">
+                      <thead>
+                        <tr>
+                          <th *ngFor="let c of task8Report.columns">{{ formatTask8Column(c) }}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr *ngFor="let row of task8Report.rows">
+                          <td *ngFor="let c of task8Report.columns">{{ row[c] || '' }}</td>
+                        </tr>
+                        <tr *ngIf="task8Report.rows.length === 0">
+                          <td [attr.colspan]="task8Report.columns.length > 0 ? task8Report.columns.length : 1" class="no-data">No rows match this page or filter.</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div class="pagination-row" *ngIf="task8Report.totalCount > 0">
+                    <p class="page-summary">
+                      Showing {{ task8PageStart }}-{{ task8PageEnd }} of {{ task8Report.totalCount }}
+                    </p>
+                    <div class="page-actions">
+                      <button type="button" class="btn btn-page" (click)="task8PrevPage()" [disabled]="task8Page <= 1">Previous</button>
+                      <span class="page-indicator">Page {{ task8Page }} / {{ task8TotalPages }}</span>
+                      <button type="button" class="btn btn-page" (click)="task8NextPage()" [disabled]="task8Page >= task8TotalPages">Next</button>
+                    </div>
+                  </div>
+                </div>
+
+                <p *ngIf="activeTask === 'task8' && task8ActiveReportId === null && !task8Loading" class="no-data task8-hint">
+                  Select a numbered report above to load data from the API.
+                </p>
+              </div>
             </ng-container>
 
             <ng-container *ngIf="activeTask === 'task10'">
@@ -542,7 +629,7 @@ import { ApprovalRequest, CreateTlTeamAssignmentDto, StaffDirectoryItem, Student
   styleUrl: './request-list.component.scss'
 })
 export class RequestListComponent implements OnInit {
-  activeTask: 'task2' | 'task9' | 'task10' | 'task11' = 'task2';
+  activeTask: 'task2' | 'task8' | 'task9' | 'task10' | 'task11' = 'task2';
 
   requests: ApprovalRequest[] = [];
   loading = true;
@@ -610,6 +697,28 @@ export class RequestListComponent implements OnInit {
   tlSubmitting = false;
   recentTlAssignments: TlTeamAssignmentItem[] = [];
   private tlMemberSearchDebounceId: number | null = null;
+
+  readonly task8Reports: { id: number; label: string }[] = [
+    { id: 1, label: 'Active students (count)' },
+    { id: 2, label: 'Active programs' },
+    { id: 3, label: 'Students per program' },
+    { id: 4, label: 'Terms (current year)' },
+    { id: 5, label: 'Staff by category' },
+    { id: 6, label: 'IT Software team' },
+    { id: 7, label: 'Active students detail' },
+    { id: 8, label: 'Grade / section mentors' },
+    { id: 9, label: 'Nucleus system accounts' },
+    { id: 10, label: 'HRIS leave balance' }
+  ];
+  task8ActiveReportId: number | null = null;
+  task8Report: Task8ReportResponse | null = null;
+  task8Loading = false;
+  task8Page = 1;
+  task8PageSize = 15;
+  readonly task8PageSizeOptions = [10, 15, 25, 50];
+  task8Search = '';
+  task8UseMssqlMirror = false;
+  private task8SearchDebounceId: number | null = null;
 
   get filteredRequests(): ApprovalRequest[] {
     const term = this.searchTerm.trim().toLowerCase();
@@ -679,7 +788,7 @@ export class RequestListComponent implements OnInit {
     this.loadDepartments();
   }
 
-  switchTask(task: 'task2' | 'task9' | 'task10' | 'task11'): void {
+  switchTask(task: 'task2' | 'task8' | 'task9' | 'task10' | 'task11'): void {
     this.activeTask = task;
 
     if (task === 'task10' && this.departmentOptions.length === 0) {
@@ -691,7 +800,125 @@ export class RequestListComponent implements OnInit {
       this.loadRecentTlAssignments();
     }
 
+    if (task === 'task8') {
+      this.task8Report = null;
+      this.task8ActiveReportId = null;
+      this.task8Page = 1;
+      this.task8Search = '';
+      this.task8UseMssqlMirror = false;
+    }
+
     this.cdr.detectChanges();
+  }
+
+  runTask8Report(reportId: number): void {
+    this.task8ActiveReportId = reportId;
+    this.task8Page = 1;
+    if (reportId !== 7) {
+      this.task8UseMssqlMirror = false;
+    }
+    this.loadTask8Report();
+  }
+
+  loadTask8Report(): void {
+    if (this.task8ActiveReportId === null) {
+      return;
+    }
+    this.task8Loading = true;
+    this.cdr.detectChanges();
+    this.approvalService
+      .getTask8Report({
+        reportId: this.task8ActiveReportId,
+        page: this.task8Page,
+        pageSize: this.task8PageSize,
+        search: this.task8Search,
+        useMssqlMirror: this.task8ActiveReportId === 7 && this.task8UseMssqlMirror
+      })
+      .subscribe({
+        next: (data) => {
+          this.task8Report = data;
+          this.task8Page = data.page;
+          this.task8PageSize = data.pageSize;
+          this.task8Loading = false;
+          this.cdr.detectChanges();
+        },
+        error: () => {
+          this.task8Loading = false;
+          this.showToastMessage('Unable to load Task 8 report. Check API and database.', 'error');
+          this.cdr.detectChanges();
+        }
+      });
+  }
+
+  onTask8SearchChange(): void {
+    if (this.task8SearchDebounceId !== null) {
+      window.clearTimeout(this.task8SearchDebounceId);
+    }
+    this.task8SearchDebounceId = window.setTimeout(() => {
+      this.task8SearchDebounceId = null;
+      if (this.task8ActiveReportId === null) {
+        return;
+      }
+      this.task8Page = 1;
+      this.loadTask8Report();
+    }, 320);
+  }
+
+  onTask8PageSizeChange(): void {
+    this.task8Page = 1;
+    if (this.task8ActiveReportId !== null) {
+      this.loadTask8Report();
+    }
+  }
+
+  onTask8MirrorToggled(): void {
+    if (this.task8ActiveReportId === 7) {
+      this.task8Page = 1;
+      this.loadTask8Report();
+    }
+  }
+
+  task8PrevPage(): void {
+    if (this.task8Page > 1) {
+      this.task8Page -= 1;
+      this.loadTask8Report();
+    }
+  }
+
+  task8NextPage(): void {
+    if (this.task8Page < this.task8TotalPages) {
+      this.task8Page += 1;
+      this.loadTask8Report();
+    }
+  }
+
+  get task8TotalPages(): number {
+    if (!this.task8Report) {
+      return 1;
+    }
+    return Math.max(1, Math.ceil(this.task8Report.totalCount / this.task8PageSize));
+  }
+
+  get task8PageStart(): number {
+    if (!this.task8Report || this.task8Report.totalCount === 0) {
+      return 0;
+    }
+    return (this.task8Page - 1) * this.task8PageSize + 1;
+  }
+
+  get task8PageEnd(): number {
+    if (!this.task8Report) {
+      return 0;
+    }
+    return Math.min(this.task8Page * this.task8PageSize, this.task8Report.totalCount);
+  }
+
+  formatTask8Column(key: string): string {
+    if (!key) {
+      return '';
+    }
+    const spaced = key.replace(/([a-z])([A-Z])/g, '$1 $2');
+    return spaced.charAt(0).toUpperCase() + spaced.slice(1);
   }
 
   loadRequests(): void {

@@ -72,3 +72,14 @@ export interface CreateTlTeamAssignmentDto {
   memberStaffIds: number[];
   taskDescription?: string;
 }
+
+export interface Task8ReportResponse {
+  reportId: number;
+  title: string;
+  columns: string[];
+  rows: Record<string, string>[];
+  totalCount: number;
+  page: number;
+  pageSize: number;
+  dataSourceNote?: string | null;
+}

@@ -12,7 +12,7 @@ using Npgsql;
 
 namespace ApprovalDemo.Api.Services
 {
-    public sealed class ApprovalSyncService
+    public sealed partial class ApprovalSyncService
     {
         private const string SyncName = "ApprovalToMssql";
         private readonly string _supabaseConnectionString;
@@ -59,6 +59,7 @@ namespace ApprovalDemo.Api.Services
                     await SyncStudentDirectorySnapshotAsync(cancellationToken);
                     await SyncStaffDirectorySnapshotAsync(cancellationToken);
                     await SyncTlTeamAssignmentSnapshotAsync(cancellationToken);
+                    await SyncTask8DataSnapshotAsync(cancellationToken);
                     await SynchronizeMirrorDeletesAsync(cancellationToken);
                     _mssqlReady = true;
                     _mssqlDisabledReason = string.Empty;
@@ -109,6 +110,7 @@ namespace ApprovalDemo.Api.Services
                     var studentUpsertsOnNoDelta = await SyncStudentDirectorySnapshotAsync(cancellationToken);
                     var staffUpsertsOnNoDelta = await SyncStaffDirectorySnapshotAsync(cancellationToken);
                     var tlUpsertsOnNoDelta = await SyncTlTeamAssignmentSnapshotAsync(cancellationToken);
+                    var task8UpsertsOnNoDelta = await SyncTask8DataSnapshotAsync(cancellationToken);
                     var noDeltaDeletes = await SynchronizeMirrorDeletesAsync(cancellationToken);
                     await MaybeRunDailyReconciliationAsync(cancellationToken);
                     return new SyncRunResult
@@ -119,7 +121,7 @@ namespace ApprovalDemo.Api.Services
                         Processed = 0,
                         Successful = 0,
                         Failed = 0,
-                        Message = $"No changed approval rows found. StudentDirectory snapshot upserted {studentUpsertsOnNoDelta} rows, StaffDirectory snapshot upserted {staffUpsertsOnNoDelta} rows, TlTeamAssignment snapshot upserted {tlUpsertsOnNoDelta} rows. Mirror cleanup removed {noDeltaDeletes.approvalDeleted} approval rows, {noDeltaDeletes.studentDeleted} student rows, {noDeltaDeletes.staffDeleted} staff rows and {noDeltaDeletes.tlDeleted} TL assignment rows."
+                        Message = $"No changed approval rows found. StudentDirectory snapshot upserted {studentUpsertsOnNoDelta} rows, StaffDirectory snapshot upserted {staffUpsertsOnNoDelta} rows, TlTeamAssignment snapshot upserted {tlUpsertsOnNoDelta} rows, Task8 reference data upserted {task8UpsertsOnNoDelta} rows. Mirror cleanup removed {noDeltaDeletes.approvalDeleted} approval rows, {noDeltaDeletes.studentDeleted} student rows, {noDeltaDeletes.staffDeleted} staff rows, {noDeltaDeletes.tlDeleted} TL assignment rows and {noDeltaDeletes.task8Deleted} Task8 mirror rows."
                     };
                 }
 
@@ -151,6 +153,7 @@ namespace ApprovalDemo.Api.Services
                 var studentUpserts = await SyncStudentDirectorySnapshotAsync(cancellationToken);
                 var staffUpserts = await SyncStaffDirectorySnapshotAsync(cancellationToken);
                 var tlUpserts = await SyncTlTeamAssignmentSnapshotAsync(cancellationToken);
+                var task8Upserts = await SyncTask8DataSnapshotAsync(cancellationToken);
                 var deleteSync = await SynchronizeMirrorDeletesAsync(cancellationToken);
                 await MaybeRunDailyReconciliationAsync(cancellationToken);
 
@@ -164,7 +167,7 @@ namespace ApprovalDemo.Api.Services
                     Failed = failed,
                     Message = failed > 0
                         ? "Stopped at first failed row. Failed row logged to dead-letter table for review."
-                        : $"Sync completed successfully. StudentDirectory snapshot upserted {studentUpserts} rows, StaffDirectory snapshot upserted {staffUpserts} rows, TlTeamAssignment snapshot upserted {tlUpserts} rows. Mirror cleanup removed {deleteSync.approvalDeleted} approval rows, {deleteSync.studentDeleted} student rows, {deleteSync.staffDeleted} staff rows and {deleteSync.tlDeleted} TL assignment rows."
+                        : $"Sync completed successfully. StudentDirectory snapshot upserted {studentUpserts} rows, StaffDirectory snapshot upserted {staffUpserts} rows, TlTeamAssignment snapshot upserted {tlUpserts} rows, Task8 reference data upserted {task8Upserts} rows. Mirror cleanup removed {deleteSync.approvalDeleted} approval rows, {deleteSync.studentDeleted} student rows, {deleteSync.staffDeleted} staff rows, {deleteSync.tlDeleted} TL assignment rows and {deleteSync.task8Deleted} Task8 mirror rows."
                 };
             }
             finally
@@ -290,6 +293,8 @@ SELECT
     ""SectionName"",
     ""PhotoUrl"",
     COALESCE(""IsActive"", TRUE) AS ""IsActive"",
+    ""ProgramCode"",
+    COALESCE(NULLIF(TRIM(""AcademicYearCode""), ''), '2025-26') AS ""AcademicYearCode"",
     ""UpdatedAt""
 FROM ""StudentDirectory""
 ORDER BY ""Id"";";
@@ -299,6 +304,7 @@ ORDER BY ""Id"";";
 
             while (await reader.ReadAsync(cancellationToken))
             {
+                var programOrdinal = reader.GetOrdinal("ProgramCode");
                 rows.Add(new StudentSourceRow
                 {
                     Id = reader.GetInt32(reader.GetOrdinal("Id")),
@@ -308,6 +314,8 @@ ORDER BY ""Id"";";
                     SectionName = reader.GetString(reader.GetOrdinal("SectionName")),
                     PhotoUrl = reader.IsDBNull(reader.GetOrdinal("PhotoUrl")) ? null : reader.GetString(reader.GetOrdinal("PhotoUrl")),
                     IsActive = reader.GetBoolean(reader.GetOrdinal("IsActive")),
+                    ProgramCode = reader.IsDBNull(programOrdinal) ? null : reader.GetString(programOrdinal),
+                    AcademicYearCode = reader.GetString(reader.GetOrdinal("AcademicYearCode")),
                     UpdatedAtUtc = reader.GetDateTime(reader.GetOrdinal("UpdatedAt"))
                 });
             }
@@ -328,6 +336,8 @@ USING (
         @SectionName AS SectionName,
         @PhotoUrl AS PhotoUrl,
         @IsActive AS IsActive,
+        @ProgramCode AS ProgramCode,
+        @AcademicYearCode AS AcademicYearCode,
         @UpdatedAt AS UpdatedAt
 ) AS source
 ON target.Id = source.Id
@@ -339,11 +349,13 @@ WHEN MATCHED AND target.UpdatedAt <= source.UpdatedAt THEN
         SectionName = source.SectionName,
         PhotoUrl = source.PhotoUrl,
         IsActive = source.IsActive,
+        ProgramCode = source.ProgramCode,
+        AcademicYearCode = source.AcademicYearCode,
         UpdatedAt = source.UpdatedAt,
         LastSyncedAt = SYSUTCDATETIME()
 WHEN NOT MATCHED THEN
-    INSERT (Id, StudentCode, FullName, GradeName, SectionName, PhotoUrl, IsActive, UpdatedAt, LastSyncedAt)
-    VALUES (source.Id, source.StudentCode, source.FullName, source.GradeName, source.SectionName, source.PhotoUrl, source.IsActive, source.UpdatedAt, SYSUTCDATETIME());";
+    INSERT (Id, StudentCode, FullName, GradeName, SectionName, PhotoUrl, IsActive, ProgramCode, AcademicYearCode, UpdatedAt, LastSyncedAt)
+    VALUES (source.Id, source.StudentCode, source.FullName, source.GradeName, source.SectionName, source.PhotoUrl, source.IsActive, source.ProgramCode, source.AcademicYearCode, source.UpdatedAt, SYSUTCDATETIME());";
 
             await using var command = new SqlCommand(sql, connection);
             command.Parameters.Add("@Id", SqlDbType.Int).Value = row.Id;
@@ -353,6 +365,8 @@ WHEN NOT MATCHED THEN
             command.Parameters.Add("@SectionName", SqlDbType.NVarChar, 50).Value = row.SectionName;
             command.Parameters.Add("@PhotoUrl", SqlDbType.NVarChar, -1).Value = (object?)row.PhotoUrl ?? DBNull.Value;
             command.Parameters.Add("@IsActive", SqlDbType.Bit).Value = row.IsActive;
+            command.Parameters.Add("@ProgramCode", SqlDbType.NVarChar, 50).Value = (object?)row.ProgramCode ?? DBNull.Value;
+            command.Parameters.Add("@AcademicYearCode", SqlDbType.NVarChar, 20).Value = row.AcademicYearCode;
             command.Parameters.Add("@UpdatedAt", SqlDbType.DateTimeOffset).Value = new DateTimeOffset(DateTime.SpecifyKind(row.UpdatedAtUtc, DateTimeKind.Utc));
 
             await command.ExecuteNonQueryAsync(cancellationToken);
@@ -395,6 +409,7 @@ SELECT
     ""PhotoUrl"",
     COALESCE(""IsActive"", TRUE) AS ""IsActive"",
     COALESCE(""IsSystemAccount"", FALSE) AS ""IsSystemAccount"",
+    COALESCE(NULLIF(TRIM(""StaffCategory""), ''), 'Academic') AS ""StaffCategory"",
     ""UpdatedAt""
 FROM ""StaffDirectory""
 ORDER BY ""Id"";";
@@ -415,6 +430,7 @@ ORDER BY ""Id"";";
                     PhotoUrl = reader.IsDBNull(reader.GetOrdinal("PhotoUrl")) ? null : reader.GetString(reader.GetOrdinal("PhotoUrl")),
                     IsActive = reader.GetBoolean(reader.GetOrdinal("IsActive")),
                     IsSystemAccount = reader.GetBoolean(reader.GetOrdinal("IsSystemAccount")),
+                    StaffCategory = reader.GetString(reader.GetOrdinal("StaffCategory")),
                     UpdatedAtUtc = reader.GetDateTime(reader.GetOrdinal("UpdatedAt"))
                 });
             }
@@ -437,6 +453,7 @@ USING (
         @PhotoUrl AS PhotoUrl,
         @IsActive AS IsActive,
         @IsSystemAccount AS IsSystemAccount,
+        @StaffCategory AS StaffCategory,
         @UpdatedAt AS UpdatedAt
 ) AS source
 ON target.Id = source.Id
@@ -450,11 +467,12 @@ WHEN MATCHED AND target.UpdatedAt <= source.UpdatedAt THEN
         PhotoUrl = source.PhotoUrl,
         IsActive = source.IsActive,
         IsSystemAccount = source.IsSystemAccount,
+        StaffCategory = source.StaffCategory,
         UpdatedAt = source.UpdatedAt,
         LastSyncedAt = SYSUTCDATETIME()
 WHEN NOT MATCHED THEN
-    INSERT (Id, StaffCode, FullName, DepartmentName, TeamName, Designation, PhotoUrl, IsActive, IsSystemAccount, UpdatedAt, LastSyncedAt)
-    VALUES (source.Id, source.StaffCode, source.FullName, source.DepartmentName, source.TeamName, source.Designation, source.PhotoUrl, source.IsActive, source.IsSystemAccount, source.UpdatedAt, SYSUTCDATETIME());";
+    INSERT (Id, StaffCode, FullName, DepartmentName, TeamName, Designation, PhotoUrl, IsActive, IsSystemAccount, StaffCategory, UpdatedAt, LastSyncedAt)
+    VALUES (source.Id, source.StaffCode, source.FullName, source.DepartmentName, source.TeamName, source.Designation, source.PhotoUrl, source.IsActive, source.IsSystemAccount, source.StaffCategory, source.UpdatedAt, SYSUTCDATETIME());";
 
             await using var command = new SqlCommand(sql, connection);
             command.Parameters.Add("@Id", SqlDbType.Int).Value = row.Id;
@@ -466,6 +484,7 @@ WHEN NOT MATCHED THEN
             command.Parameters.Add("@PhotoUrl", SqlDbType.NVarChar, -1).Value = (object?)row.PhotoUrl ?? DBNull.Value;
             command.Parameters.Add("@IsActive", SqlDbType.Bit).Value = row.IsActive;
             command.Parameters.Add("@IsSystemAccount", SqlDbType.Bit).Value = row.IsSystemAccount;
+            command.Parameters.Add("@StaffCategory", SqlDbType.NVarChar, 30).Value = row.StaffCategory;
             command.Parameters.Add("@UpdatedAt", SqlDbType.DateTimeOffset).Value = new DateTimeOffset(DateTime.SpecifyKind(row.UpdatedAtUtc, DateTimeKind.Utc));
 
             await command.ExecuteNonQueryAsync(cancellationToken);
@@ -580,7 +599,7 @@ WHEN NOT MATCHED THEN
             await command.ExecuteNonQueryAsync(cancellationToken);
         }
 
-        private async Task<(int approvalDeleted, int studentDeleted, int staffDeleted, int tlDeleted)> SynchronizeMirrorDeletesAsync(CancellationToken cancellationToken)
+        private async Task<(int approvalDeleted, int studentDeleted, int staffDeleted, int tlDeleted, int task8Deleted)> SynchronizeMirrorDeletesAsync(CancellationToken cancellationToken)
         {
             var approvalSourceIds = await GetSourceIdsAsync(cancellationToken);
             var approvalTargetIds = await GetTargetIdsAsync(cancellationToken);
@@ -605,8 +624,9 @@ WHEN NOT MATCHED THEN
             var studentDeleted = await DeleteRowsByIdsAsync(connection, "DELETE FROM dbo.StudentDirectoryMirror WHERE Id = @Id", studentStaleIds, cancellationToken);
             var staffDeleted = await DeleteRowsByIdsAsync(connection, "DELETE FROM dbo.StaffDirectoryMirror WHERE Id = @Id", staffStaleIds, cancellationToken);
             var tlDeleted = await DeleteRowsByGuidsAsync(connection, "DELETE FROM dbo.TlTeamAssignmentMirror WHERE Id = @Id", tlStaleIds, cancellationToken);
+            var task8Deleted = await SynchronizeTask8MirrorDeletesAsync(connection, cancellationToken);
 
-            return (approvalDeleted, studentDeleted, staffDeleted, tlDeleted);
+            return (approvalDeleted, studentDeleted, staffDeleted, tlDeleted, task8Deleted);
         }
 
         private static async Task<int> DeleteRowsByGuidsAsync(SqlConnection connection, string sql, IReadOnlyCollection<Guid> ids, CancellationToken cancellationToken)
@@ -1273,7 +1293,81 @@ IF NOT EXISTS (
 )
 BEGIN
     CREATE INDEX IX_TlTeamAssignmentMirror_TlStaffCode ON dbo.TlTeamAssignmentMirror(TlStaffCode);
-END;";
+END;
+
+IF COL_LENGTH('dbo.StudentDirectoryMirror', 'ProgramCode') IS NULL ALTER TABLE dbo.StudentDirectoryMirror ADD ProgramCode NVARCHAR(50) NULL;
+
+IF COL_LENGTH('dbo.StudentDirectoryMirror', 'AcademicYearCode') IS NULL
+    ALTER TABLE dbo.StudentDirectoryMirror ADD AcademicYearCode NVARCHAR(20) NOT NULL CONSTRAINT DF_StudentDirectoryMirror_AcademicYear DEFAULT '2025-26';
+
+IF COL_LENGTH('dbo.StaffDirectoryMirror', 'StaffCategory') IS NULL
+    ALTER TABLE dbo.StaffDirectoryMirror ADD StaffCategory NVARCHAR(30) NOT NULL CONSTRAINT DF_StaffDirectoryMirror_StaffCategory DEFAULT 'Academic';
+
+IF OBJECT_ID(N'dbo.AcademicProgramMirror', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.AcademicProgramMirror (
+        Id INT NOT NULL PRIMARY KEY,
+        Code NVARCHAR(50) NOT NULL,
+        Name NVARCHAR(200) NOT NULL,
+        IsActive BIT NOT NULL,
+        UpdatedAt DATETIMEOFFSET(0) NOT NULL,
+        LastSyncedAt DATETIMEOFFSET(0) NOT NULL CONSTRAINT DF_AcademicProgramMirror_LastSyncedAt DEFAULT SYSUTCDATETIME()
+    );
+END;
+
+IF OBJECT_ID(N'dbo.AcademicTermMirror', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.AcademicTermMirror (
+        Id INT NOT NULL PRIMARY KEY,
+        TermCode NVARCHAR(50) NOT NULL,
+        TermName NVARCHAR(200) NOT NULL,
+        SchoolYearCode NVARCHAR(20) NOT NULL,
+        StartDate DATE NOT NULL,
+        EndDate DATE NOT NULL,
+        IsInCurrentSchoolYear BIT NOT NULL,
+        UpdatedAt DATETIMEOFFSET(0) NOT NULL,
+        LastSyncedAt DATETIMEOFFSET(0) NOT NULL CONSTRAINT DF_AcademicTermMirror_LastSyncedAt DEFAULT SYSUTCDATETIME()
+    );
+END;
+
+IF OBJECT_ID(N'dbo.GradeSectionMentorMirror', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.GradeSectionMentorMirror (
+        Id INT NOT NULL PRIMARY KEY,
+        GradeName NVARCHAR(80) NOT NULL,
+        SectionName NVARCHAR(80) NOT NULL,
+        MentorStaffCode NVARCHAR(50) NOT NULL,
+        MentorFullName NVARCHAR(200) NOT NULL,
+        UpdatedAt DATETIMEOFFSET(0) NOT NULL,
+        LastSyncedAt DATETIMEOFFSET(0) NOT NULL CONSTRAINT DF_GradeSectionMentorMirror_LastSyncedAt DEFAULT SYSUTCDATETIME()
+    );
+END;
+
+IF OBJECT_ID(N'dbo.HrisLeaveBalanceMirror', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.HrisLeaveBalanceMirror (
+        Id INT NOT NULL PRIMARY KEY,
+        StaffCode NVARCHAR(50) NOT NULL,
+        LeaveType NVARCHAR(80) NOT NULL,
+        BalanceDays DECIMAL(6,2) NOT NULL,
+        AsOfDate DATE NOT NULL,
+        UpdatedAt DATETIMEOFFSET(0) NOT NULL,
+        LastSyncedAt DATETIMEOFFSET(0) NOT NULL CONSTRAINT DF_HrisLeaveBalanceMirror_LastSyncedAt DEFAULT SYSUTCDATETIME()
+    );
+END;
+
+IF OBJECT_ID(N'dbo.sp_Task8_ActiveStudentsDetail', N'P') IS NOT NULL
+    DROP PROCEDURE dbo.sp_Task8_ActiveStudentsDetail;
+
+EXEC(N'CREATE PROCEDURE dbo.sp_Task8_ActiveStudentsDetail
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT FullName, GradeName, SectionName, AcademicYearCode
+    FROM dbo.StudentDirectoryMirror
+    WHERE IsActive = 1
+    ORDER BY FullName;
+END');";
 
             await using var command = new SqlCommand(sql, connection);
             await command.ExecuteNonQueryAsync(cancellationToken);
@@ -1337,6 +1431,8 @@ END;";
         public string SectionName { get; init; } = string.Empty;
         public string? PhotoUrl { get; init; }
         public bool IsActive { get; init; }
+        public string? ProgramCode { get; init; }
+        public string AcademicYearCode { get; init; } = "2025-26";
         public DateTime UpdatedAtUtc { get; init; }
     }
 
@@ -1351,6 +1447,7 @@ END;";
         public string? PhotoUrl { get; init; }
         public bool IsActive { get; init; }
         public bool IsSystemAccount { get; init; }
+        public string StaffCategory { get; init; } = "Academic";
         public DateTime UpdatedAtUtc { get; init; }
     }
 

@@ -30,6 +30,7 @@ builder.Services.AddScoped<ApprovalRepository>();
 builder.Services.AddScoped<StudentRepository>();
 builder.Services.AddScoped<StaffRepository>();
 builder.Services.AddScoped<TlTeamAssignmentRepository>();
+builder.Services.AddScoped<Task8Repository>();
 builder.Services.AddSingleton<ApprovalSyncService>();
 var enableMssqlSync = !string.Equals(
     Environment.GetEnvironmentVariable("ENABLE_MSSQL_SYNC") ?? builder.Configuration["ENABLE_MSSQL_SYNC"],
@@ -161,8 +162,10 @@ using (var scope = app.Services.CreateScope())
     var studentRepository = scope.ServiceProvider.GetRequiredService<StudentRepository>();
     var staffRepository = scope.ServiceProvider.GetRequiredService<StaffRepository>();
     var tlTeamAssignmentRepository = scope.ServiceProvider.GetRequiredService<TlTeamAssignmentRepository>();
+    var task8Repository = scope.ServiceProvider.GetRequiredService<Task8Repository>();
     await studentRepository.EnsureSchemaAndSeedAsync(CancellationToken.None);
     await staffRepository.EnsureSchemaAndSeedAsync(CancellationToken.None);
+    await task8Repository.EnsureSchemaAndSeedAsync(CancellationToken.None);
     await tlTeamAssignmentRepository.EnsureSchemaAsync(CancellationToken.None);
 
     if (enableMssqlSync)

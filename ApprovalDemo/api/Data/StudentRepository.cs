@@ -35,7 +35,10 @@ CREATE INDEX IF NOT EXISTS ""IX_StudentDirectory_Grade_Section""
 ON ""StudentDirectory"" (""GradeName"", ""SectionName"");
 
 CREATE INDEX IF NOT EXISTS ""IX_StudentDirectory_Active_FullName""
-ON ""StudentDirectory"" (""IsActive"", ""FullName"");";
+ON ""StudentDirectory"" (""IsActive"", ""FullName"");
+
+ALTER TABLE ""StudentDirectory"" ADD COLUMN IF NOT EXISTS ""ProgramCode"" VARCHAR(50) NULL;
+ALTER TABLE ""StudentDirectory"" ADD COLUMN IF NOT EXISTS ""AcademicYearCode"" VARCHAR(20) NOT NULL DEFAULT '2025-26';";
 
             await using (var ddlCommand = new NpgsqlCommand(ddl, connection))
             {

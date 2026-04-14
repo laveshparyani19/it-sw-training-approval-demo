@@ -951,6 +951,130 @@ textarea:focus {
     }
 }
 
+.task8-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+}
+
+.task8-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 10px;
+}
+
+.task8-chip {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    text-align: left;
+    padding: 12px 14px;
+    border-radius: 14px;
+    border: 1px solid rgba(18, 34, 46, 0.12);
+    background: rgba(255, 255, 255, 0.92);
+    cursor: pointer;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.12s ease;
+    font: inherit;
+    color: inherit;
+
+    &:hover {
+        border-color: rgba(43, 147, 189, 0.45);
+        box-shadow: 0 8px 22px rgba(8, 28, 38, 0.08);
+    }
+
+    &.active {
+        border-color: rgba(43, 147, 189, 0.85);
+        box-shadow: 0 0 0 3px rgba(43, 147, 189, 0.18);
+    }
+}
+
+.task8-chip-id {
+    flex-shrink: 0;
+    min-width: 26px;
+    height: 26px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 9px;
+    font-size: 12px;
+    font-weight: 700;
+    background: linear-gradient(135deg, #2ca6d2, #1a6d90);
+    color: #fff;
+}
+
+.task8-chip-text {
+    font-size: 13px;
+    line-height: 1.35;
+    color: #1a3344;
+}
+
+.task8-mirror {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    font-size: 13px;
+    color: #2a4a5c;
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: rgba(43, 147, 189, 0.08);
+    border: 1px solid rgba(43, 147, 189, 0.2);
+
+    input {
+        margin-top: 3px;
+    }
+
+    code {
+        font-size: 11px;
+        background: rgba(255, 255, 255, 0.7);
+        padding: 1px 6px;
+        border-radius: 6px;
+    }
+}
+
+.task8-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    align-items: flex-end;
+    justify-content: space-between;
+}
+
+.task8-search {
+    flex: 1;
+    min-width: 220px;
+}
+
+.task8-results {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.task8-report-title {
+    margin: 0;
+    font-size: 1.05rem;
+    font-weight: 650;
+    color: #12222e;
+}
+
+.task8-source-note {
+    margin: 0;
+    font-size: 12px;
+    color: #4a6675;
+    line-height: 1.45;
+}
+
+.task8-table {
+    font-size: 13px;
+}
+
+.task8-hint {
+    margin: 0;
+    padding: 12px;
+    border-radius: 12px;
+    background: rgba(18, 34, 46, 0.04);
+}
+
 @keyframes drift {
 
     0%,

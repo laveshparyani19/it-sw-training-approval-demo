@@ -37,7 +37,9 @@ CREATE INDEX IF NOT EXISTS ""IX_StaffDirectory_Active_System_FullName""
 ON ""StaffDirectory"" (""IsActive"", ""IsSystemAccount"", ""FullName"");
 
 CREATE INDEX IF NOT EXISTS ""IX_StaffDirectory_Department_Team""
-ON ""StaffDirectory"" (""DepartmentName"", ""TeamName"");";
+ON ""StaffDirectory"" (""DepartmentName"", ""TeamName"");
+
+ALTER TABLE ""StaffDirectory"" ADD COLUMN IF NOT EXISTS ""StaffCategory"" VARCHAR(30) NOT NULL DEFAULT 'Academic';";
 
             await using (var ddlCommand = new NpgsqlCommand(ddl, connection))
             {

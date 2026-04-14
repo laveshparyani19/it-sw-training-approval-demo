@@ -29,4 +29,8 @@ and SQL Server lives on your PC or private network.
    $env:NAME = 'value'
 
 The worker uses the same ApprovalSyncService as the web app: approvals watermark,
-StudentDirectory, StaffDirectory, TlTeamAssignment, and mirror deletes.
+StudentDirectory, StaffDirectory, TlTeamAssignment, Task 8 reference mirrors
+(AcademicProgram, AcademicTerm, GradeSectionMentor, HrisLeaveBalance), and mirror deletes.
+
+Workflow: load or adjust data in Supabase (e.g. ApprovalDemo/api/supabase_task8_sample_data.sql
+in the SQL editor), then run this worker so SQL Server mirror tables stay in sync with Postgres.

@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
-import { ApprovalRequest, CreateRequestDto, DecisionDto, CreateTlTeamAssignmentDto, PagedResult, StaffDirectoryItem, StudentDirectoryItem, TeamOptionItem, TlTeamAssignmentItem } from '../models/approval.model';
+import { ApprovalRequest, CreateRequestDto, DecisionDto, CreateTlTeamAssignmentDto, PagedResult, StaffDirectoryItem, StudentDirectoryItem, Task8ReportResponse, TeamOptionItem, TlTeamAssignmentItem } from '../models/approval.model';
 
 @Injectable({
   providedIn: 'root'
@@ -12,6 +12,7 @@ export class ApprovalService {
   private studentApiUrl = `${this.apiRoot}/students`;
   private staffApiUrl = `${this.apiRoot}/staff`;
   private tlApiUrl = `${this.apiRoot}/tl`;
+  private task8ApiUrl = `${this.apiRoot}/task8`;
 
   constructor(private http: HttpClient) { }
 
@@ -146,5 +147,21 @@ export class ApprovalService {
   getTlAssignments(tlStaffCode: string, take = 20): Observable<TlTeamAssignmentItem[]> {
     const code = encodeURIComponent(tlStaffCode.trim());
     return this.http.get<TlTeamAssignmentItem[]>(`${this.tlApiUrl}/assignments?tlStaffCode=${code}&take=${take}`);
+  }
+
+  getTask8Report(params: {
+    reportId: number;
+    page?: number;
+    pageSize?: number;
+    search?: string;
+    useMssqlMirror?: boolean;
+  }): Observable<Task8ReportResponse> {
+    const page = params.page ?? 1;
+    const pageSize = params.pageSize ?? 25;
+    const search = encodeURIComponent((params.search ?? '').trim());
+    const useMssqlMirror = params.useMssqlMirror ?? false;
+    return this.http.get<Task8ReportResponse>(
+      `${this.task8ApiUrl}/report/${params.reportId}?page=${page}&pageSize=${pageSize}&search=${search}&useMssqlMirror=${useMssqlMirror}`
+    );
   }
 }
