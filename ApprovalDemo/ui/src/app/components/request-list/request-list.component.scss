@@ -679,6 +679,17 @@ h1 {
     background: #ffffff;
 }
 
+.tl-recent-header.selected-header {
+    justify-content: flex-start;
+}
+
+.tl-recent-for {
+    margin: 4px 0 0;
+    font-size: 13px;
+    color: #4c6775;
+    font-weight: 600;
+}
+
 .tl-recent-meta {
     margin: 4px 0 0;
     font-size: 12px;

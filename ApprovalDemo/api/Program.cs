@@ -1,49 +1,14 @@
+using ApprovalDemo.Api.Configuration;
 using ApprovalDemo.Api.Data;
 using ApprovalDemo.Api.Services;
 using ApprovalDemo.Api.Middleware;
-using System.Net;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Prefer a full connection string from env (pooler/direct), with backward-compatible fallback.
-var rawConnectionString = Environment.GetEnvironmentVariable("SUPABASE_CONNECTION_STRING")
-    ?? Environment.GetEnvironmentVariable("DATABASE_URL")
-    ?? builder.Configuration["SUPABASE_CONNECTION_STRING"];
-
-var configuredDefaultConnection = builder.Configuration.GetConnectionString("DefaultConnection");
-if (string.IsNullOrWhiteSpace(rawConnectionString)
-    && !string.IsNullOrWhiteSpace(configuredDefaultConnection)
-    && !string.Equals(configuredDefaultConnection, "DefaultConnection", StringComparison.OrdinalIgnoreCase))
-{
-    rawConnectionString = configuredDefaultConnection;
-}
-
-string connectionString;
-if (!string.IsNullOrWhiteSpace(rawConnectionString))
-{
-    connectionString = rawConnectionString.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase)
-        || rawConnectionString.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase)
-        ? BuildNpgsqlConnectionStringFromUri(rawConnectionString)
-        : rawConnectionString;
-}
-else
-{
-    var supabasePassword = Environment.GetEnvironmentVariable("SUPABASE_PASSWORD")
-        ?? builder.Configuration["SUPABASE_PASSWORD"]
-        ?? throw new InvalidOperationException("Set SUPABASE_CONNECTION_STRING (recommended) or SUPABASE_PASSWORD");
-    var host = Environment.GetEnvironmentVariable("SUPABASE_HOST") ?? "db.qxevtcviybjzqueipukf.supabase.co";
-    var port = Environment.GetEnvironmentVariable("SUPABASE_PORT") ?? "5432";
-    var username = Environment.GetEnvironmentVariable("SUPABASE_USER") ?? "postgres";
-    var database = Environment.GetEnvironmentVariable("SUPABASE_DB") ?? "postgres";
-
-    connectionString = $"Host={host};Port={port};Username={username};Password={supabasePassword};Database={database};SSL Mode=Require;Trust Server Certificate=true";
-}
-
+var connectionString = DatabaseConnectionResolver.ResolvePostgresConnectionString(builder.Configuration);
 builder.Configuration["ConnectionStrings:DefaultConnection"] = connectionString;
 
-var mssqlConnectionString = Environment.GetEnvironmentVariable("MSSQL_CONNECTION_STRING")
-    ?? builder.Configuration["ApprovalDemoDbConnectionString"]
-    ?? builder.Configuration.GetConnectionString("MssqlReporting");
+var mssqlConnectionString = DatabaseConnectionResolver.ResolveMssqlConnectionString(builder.Configuration);
 if (!string.IsNullOrWhiteSpace(mssqlConnectionString))
 {
     builder.Configuration["ConnectionStrings:MssqlReporting"] = mssqlConnectionString;
@@ -208,24 +173,3 @@ using (var scope = app.Services.CreateScope())
 }
 
 app.Run();
-
-static string BuildNpgsqlConnectionStringFromUri(string uriString)
-{
-    var uri = new Uri(uriString);
-
-    var userInfo = uri.UserInfo.Split(':', 2);
-    if (userInfo.Length != 2)
-    {
-        throw new InvalidOperationException("Invalid Postgres URI format. Expected username and password in the URI.");
-    }
-
-    var username = WebUtility.UrlDecode(userInfo[0]);
-    var password = WebUtility.UrlDecode(userInfo[1]);
-    var database = uri.AbsolutePath.Trim('/');
-    if (string.IsNullOrWhiteSpace(database))
-    {
-        database = "postgres";
-    }
-
-    return $"Host={uri.Host};Port={uri.Port};Username={username};Password={password};Database={database};SSL Mode=Require;Trust Server Certificate=true";
-}

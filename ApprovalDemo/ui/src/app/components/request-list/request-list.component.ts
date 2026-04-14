@@ -37,7 +37,7 @@ import { ApprovalRequest, CreateTlTeamAssignmentDto, StaffDirectoryItem, Student
             <button class="sidebar-link" [class.active]="activeTask === 'task2'" (click)="switchTask('task2')">Task 2</button>
             <button class="sidebar-link" [class.active]="activeTask === 'task9'" (click)="switchTask('task9')">Task 9</button>
             <button class="sidebar-link" [class.active]="activeTask === 'task10'" (click)="switchTask('task10')">Task 10</button>
-            <button class="sidebar-link" [class.active]="activeTask === 'task11'" (click)="switchTask('task11')">Task 11 · Nucleus TL</button>
+            <button class="sidebar-link" [class.active]="activeTask === 'task11'" (click)="switchTask('task11')">Task 11</button>
           </aside>
 
           <main class="content-panel">
@@ -57,8 +57,8 @@ import { ApprovalRequest, CreateTlTeamAssignmentDto, StaffDirectoryItem, Student
             </header>
 
             <header class="content-header" *ngIf="activeTask === 'task11'">
-              <p class="eyebrow">Nucleus · Team lead</p>
-              <p class="subtitle">Choose one team with round radio controls, then pick team members and capture the task (mirrors LIVE_PROJ department + staff picker flow).</p>
+              <p class="eyebrow">Team Lead Assignment</p>
+              <p class="subtitle">Select one team, choose members from that team, and enter the task description. Member lists show active staff only and exclude system accounts.</p>
             </header>
 
             <ng-container *ngIf="activeTask === 'task2'">
@@ -423,7 +423,7 @@ import { ApprovalRequest, CreateTlTeamAssignmentDto, StaffDirectoryItem, Student
             <ng-container *ngIf="activeTask === 'task11'">
               <div class="tl-top-grid">
                 <div class="tl-field">
-                  <label for="tl-code">Team lead (staff code)</label>
+                  <label for="tl-code">Team lead staff code</label>
                   <input
                     id="tl-code"
                     type="text"
@@ -447,13 +447,13 @@ import { ApprovalRequest, CreateTlTeamAssignmentDto, StaffDirectoryItem, Student
               </div>
 
               <div class="tl-team-section">
-                <p class="field-label">Select team</p>
+                <p class="field-label">Select one team</p>
                 <div class="team-radio-list" *ngIf="teamTlOptions.length > 0; else tlTeamsLoading">
                   <label *ngFor="let t of teamTlOptions" class="team-radio-row">
                     <input
                       type="radio"
                       class="circle-radio"
-                      name="nucleusTeamPick"
+                      name="task11Team"
                       [checked]="isTlTeamSelected(t)"
                       (change)="selectTlTeam(t)"
                     />
@@ -491,17 +491,20 @@ import { ApprovalRequest, CreateTlTeamAssignmentDto, StaffDirectoryItem, Student
               </div>
 
               <div class="tl-task-area">
-                <label for="tl-task-desc">Enter task (required)</label>
-                <textarea id="tl-task-desc" rows="4" [(ngModel)]="tlTaskDescription" placeholder="Describe the task for the selected members"></textarea>
+                <label for="tl-task-desc">Task description (required)</label>
+                <textarea id="tl-task-desc" rows="4" [(ngModel)]="tlTaskDescription" placeholder="Describe the task for the selected members."></textarea>
               </div>
 
               <button type="button" class="tl-submit-bar" (click)="submitTlAssignment()" [disabled]="tlSubmitting || !canSubmitTlAssignment">
-                {{ tlSubmitting ? 'Saving…' : 'Task of ' + (tlStaffCodeInput || 'TL').trim() }}
+                {{ tlSubmitting ? 'Saving…' : 'Submit assignment' }}
               </button>
 
               <section class="selected-students-panel" *ngIf="recentTlAssignments.length > 0">
-                <div class="selected-header">
-                  <h3>Recent assignments ({{ tlStaffCodeInput.trim() || '—' }})</h3>
+                <div class="selected-header tl-recent-header">
+                  <div>
+                    <h3>Recent assignments</h3>
+                    <p class="tl-recent-for" *ngIf="tlStaffCodeInput.trim()">Team lead: {{ tlStaffCodeInput.trim() }}</p>
+                  </div>
                 </div>
                 <ul class="tl-recent-list">
                   <li *ngFor="let a of recentTlAssignments">
