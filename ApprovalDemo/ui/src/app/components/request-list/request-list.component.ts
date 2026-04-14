@@ -2,7 +2,7 @@ import { Component, OnInit, ChangeDetectorRef, HostListener } from '@angular/cor
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApprovalService } from '../../services/approval.service';
-import { ApprovalRequest, StaffDirectoryItem, StudentDirectoryItem } from '../../models/approval.model';
+import { ApprovalRequest, CreateTlTeamAssignmentDto, StaffDirectoryItem, StudentDirectoryItem, TeamOptionItem, TlTeamAssignmentItem } from '../../models/approval.model';
 
 @Component({
   selector: 'app-request-list',
@@ -37,6 +37,7 @@ import { ApprovalRequest, StaffDirectoryItem, StudentDirectoryItem } from '../..
             <button class="sidebar-link" [class.active]="activeTask === 'task2'" (click)="switchTask('task2')">Task 2</button>
             <button class="sidebar-link" [class.active]="activeTask === 'task9'" (click)="switchTask('task9')">Task 9</button>
             <button class="sidebar-link" [class.active]="activeTask === 'task10'" (click)="switchTask('task10')">Task 10</button>
+            <button class="sidebar-link" [class.active]="activeTask === 'task11'" (click)="switchTask('task11')">Task 11 · Nucleus TL</button>
           </aside>
 
           <main class="content-panel">
@@ -53,6 +54,11 @@ import { ApprovalRequest, StaffDirectoryItem, StudentDirectoryItem } from '../..
             <header class="content-header" *ngIf="activeTask === 'task10'">
               <p class="eyebrow">Staff Observation</p>
               <p class="subtitle">Select active staff only, automatically excluding system accounts.</p>
+            </header>
+
+            <header class="content-header" *ngIf="activeTask === 'task11'">
+              <p class="eyebrow">Nucleus · Team lead</p>
+              <p class="subtitle">Choose one team with round radio controls, then pick team members and capture the task (mirrors LIVE_PROJ department + staff picker flow).</p>
             </header>
 
             <ng-container *ngIf="activeTask === 'task2'">
@@ -413,6 +419,101 @@ import { ApprovalRequest, StaffDirectoryItem, StudentDirectoryItem } from '../..
                 <p *ngIf="selectedStaff.length === 0" class="no-data">No staff selected yet.</p>
               </section>
             </ng-container>
+
+            <ng-container *ngIf="activeTask === 'task11'">
+              <div class="tl-top-grid">
+                <div class="tl-field">
+                  <label for="tl-code">Team lead (staff code)</label>
+                  <input
+                    id="tl-code"
+                    type="text"
+                    [(ngModel)]="tlStaffCodeInput"
+                    (ngModelChange)="onTlStaffCodeChanged()"
+                    placeholder="e.g. STF-1007"
+                    autocomplete="off"
+                  />
+                </div>
+                <div class="student-search-box tl-search">
+                  <label for="tl-member-search">Filter team members</label>
+                  <input
+                    id="tl-member-search"
+                    type="text"
+                    [(ngModel)]="tlMemberSearch"
+                    (ngModelChange)="onTlMemberSearchChanged()"
+                    [disabled]="!selectedTlTeam"
+                    placeholder="Name or code"
+                  />
+                </div>
+              </div>
+
+              <div class="tl-team-section">
+                <p class="field-label">Select team</p>
+                <div class="team-radio-list" *ngIf="teamTlOptions.length > 0; else tlTeamsLoading">
+                  <label *ngFor="let t of teamTlOptions" class="team-radio-row">
+                    <input
+                      type="radio"
+                      class="circle-radio"
+                      name="nucleusTeamPick"
+                      [checked]="isTlTeamSelected(t)"
+                      (change)="selectTlTeam(t)"
+                    />
+                    <span>{{ t.displayLabel }}</span>
+                  </label>
+                </div>
+                <ng-template #tlTeamsLoading>
+                  <p class="multi-empty">{{ tlTeamsLoading ? 'Loading teams…' : 'No teams found in staff directory.' }}</p>
+                </ng-template>
+              </div>
+
+              <div class="student-picker-row tl-picker-row">
+                <div class="student-filter-item student-picker-field">
+                  <label for="tl-staff-picker">Select staff</label>
+                  <div class="multi-dropdown" (click)="$event.stopPropagation()">
+                    <button type="button" id="tl-staff-picker" class="multi-dropdown-toggle" (click)="toggleTlMemberDropdown()" [disabled]="!selectedTlTeam">
+                      <span>{{ tlMemberSelectionSummary }}</span>
+                      <span class="caret">&#9662;</span>
+                    </button>
+                    <div class="multi-dropdown-menu student-menu" *ngIf="tlMemberDropdownOpen">
+                      <label class="multi-option" *ngIf="tlMembers.length > 0">
+                        <input type="checkbox" [checked]="isAllTlMembersSelected" (change)="toggleAllTlMembers($event)" />
+                        <span>Check/uncheck all</span>
+                      </label>
+                      <label class="multi-option" *ngFor="let staff of tlMembers">
+                        <input type="checkbox" [checked]="pendingTlMemberIds.includes(staff.id)" (change)="toggleTlMemberSelection(staff.id, $event)" />
+                        <span>{{ staff.fullName }}</span>
+                      </label>
+                      <p class="multi-empty" *ngIf="!selectedTlTeam">Select a team first.</p>
+                      <p class="multi-empty" *ngIf="selectedTlTeam && tlMembersLoading">Loading staff…</p>
+                      <p class="multi-empty" *ngIf="selectedTlTeam && !tlMembersLoading && tlMembers.length === 0">No staff in this team.</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="tl-task-area">
+                <label for="tl-task-desc">Enter task (required)</label>
+                <textarea id="tl-task-desc" rows="4" [(ngModel)]="tlTaskDescription" placeholder="Describe the task for the selected members"></textarea>
+              </div>
+
+              <button type="button" class="tl-submit-bar" (click)="submitTlAssignment()" [disabled]="tlSubmitting || !canSubmitTlAssignment">
+                {{ tlSubmitting ? 'Saving…' : 'Task of ' + (tlStaffCodeInput || 'TL').trim() }}
+              </button>
+
+              <section class="selected-students-panel" *ngIf="recentTlAssignments.length > 0">
+                <div class="selected-header">
+                  <h3>Recent assignments ({{ tlStaffCodeInput.trim() || '—' }})</h3>
+                </div>
+                <ul class="tl-recent-list">
+                  <li *ngFor="let a of recentTlAssignments">
+                    <div>
+                      <strong>{{ a.departmentName }} — {{ a.teamName }}</strong>
+                      <p class="tl-recent-meta">{{ a.memberStaffIds.length }} member(s) · {{ a.createdAtUtc | date:'medium' }}</p>
+                      <p class="tl-recent-task" *ngIf="a.taskDescription">{{ a.taskDescription }}</p>
+                    </div>
+                  </li>
+                </ul>
+              </section>
+            </ng-container>
           </main>
         </div>
       </div>
@@ -438,7 +539,7 @@ import { ApprovalRequest, StaffDirectoryItem, StudentDirectoryItem } from '../..
   styleUrl: './request-list.component.scss'
 })
 export class RequestListComponent implements OnInit {
-  activeTask: 'task2' | 'task9' | 'task10' = 'task2';
+  activeTask: 'task2' | 'task9' | 'task10' | 'task11' = 'task2';
 
   requests: ApprovalRequest[] = [];
   loading = true;
@@ -493,6 +594,20 @@ export class RequestListComponent implements OnInit {
   private failedPhotoStaffIds = new Set<number>();
   private staffSearchDebounceId: number | null = null;
 
+  teamTlOptions: TeamOptionItem[] = [];
+  tlTeamsLoading = false;
+  selectedTlTeam: TeamOptionItem | null = null;
+  tlStaffCodeInput = 'STF-1007';
+  tlMemberSearch = '';
+  tlMembers: StaffDirectoryItem[] = [];
+  tlMembersLoading = false;
+  pendingTlMemberIds: number[] = [];
+  tlMemberDropdownOpen = false;
+  tlTaskDescription = '';
+  tlSubmitting = false;
+  recentTlAssignments: TlTeamAssignmentItem[] = [];
+  private tlMemberSearchDebounceId: number | null = null;
+
   get filteredRequests(): ApprovalRequest[] {
     const term = this.searchTerm.trim().toLowerCase();
     if (!term) {
@@ -526,6 +641,29 @@ export class RequestListComponent implements OnInit {
     return Math.min(this.currentPage * this.pageSize, this.filteredRequests.length);
   }
 
+  get canSubmitTlAssignment(): boolean {
+    return !!(
+      this.selectedTlTeam
+      && this.pendingTlMemberIds.length > 0
+      && this.tlStaffCodeInput.trim().length > 0
+      && this.tlTaskDescription.trim().length > 0
+    );
+  }
+
+  get tlMemberSelectionSummary(): string {
+    if (this.pendingTlMemberIds.length === 0) {
+      return 'Select staff';
+    }
+    const names = this.tlMembers
+      .filter((s) => this.pendingTlMemberIds.includes(s.id))
+      .map((s) => s.fullName);
+    return names.length > 0 ? names.join(', ') : `${this.pendingTlMemberIds.length} selected`;
+  }
+
+  get isAllTlMembersSelected(): boolean {
+    return this.tlMembers.length > 0 && this.pendingTlMemberIds.length === this.tlMembers.length;
+  }
+
   constructor(
     private approvalService: ApprovalService,
     private cdr: ChangeDetectorRef
@@ -538,11 +676,16 @@ export class RequestListComponent implements OnInit {
     this.loadDepartments();
   }
 
-  switchTask(task: 'task2' | 'task9' | 'task10'): void {
+  switchTask(task: 'task2' | 'task9' | 'task10' | 'task11'): void {
     this.activeTask = task;
 
     if (task === 'task10' && this.departmentOptions.length === 0) {
       this.loadDepartments();
+    }
+
+    if (task === 'task11') {
+      this.ensureTlTeamsLoaded();
+      this.loadRecentTlAssignments();
     }
 
     this.cdr.detectChanges();
@@ -703,6 +846,7 @@ export class RequestListComponent implements OnInit {
     this.departmentDropdownOpen = false;
     this.teamDropdownOpen = false;
     this.staffDropdownOpen = false;
+    this.tlMemberDropdownOpen = false;
   }
 
   get gradeSelectionSummary(): string {
@@ -1329,6 +1473,159 @@ export class RequestListComponent implements OnInit {
     }
 
     return false;
+  }
+
+  private ensureTlTeamsLoaded(): void {
+    if (this.teamTlOptions.length > 0 || this.tlTeamsLoading) {
+      return;
+    }
+    this.tlTeamsLoading = true;
+    this.approvalService.getTlTeamOptions(200).subscribe({
+      next: (opts) => {
+        this.teamTlOptions = opts;
+        this.tlTeamsLoading = false;
+        this.cdr.detectChanges();
+      },
+      error: () => {
+        this.tlTeamsLoading = false;
+        this.showToastMessage('Could not load team list.', 'error');
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  isTlTeamSelected(t: TeamOptionItem): boolean {
+    return !!(
+      this.selectedTlTeam
+      && this.selectedTlTeam.departmentName === t.departmentName
+      && this.selectedTlTeam.teamName === t.teamName
+    );
+  }
+
+  selectTlTeam(t: TeamOptionItem): void {
+    this.selectedTlTeam = t;
+    this.pendingTlMemberIds = [];
+    this.tlMemberSearch = '';
+    this.loadTlMembersForTeam();
+  }
+
+  onTlMemberSearchChanged(): void {
+    if (!this.selectedTlTeam) {
+      return;
+    }
+    if (this.tlMemberSearchDebounceId !== null) {
+      window.clearTimeout(this.tlMemberSearchDebounceId);
+    }
+    this.tlMemberSearchDebounceId = window.setTimeout(() => {
+      this.loadTlMembersForTeam();
+      this.tlMemberSearchDebounceId = null;
+    }, 260);
+  }
+
+  private loadTlMembersForTeam(): void {
+    if (!this.selectedTlTeam) {
+      this.tlMembers = [];
+      return;
+    }
+    this.tlMembersLoading = true;
+    this.approvalService
+      .getTlTeamMembers({
+        department: this.selectedTlTeam.departmentName,
+        team: this.selectedTlTeam.teamName,
+        search: this.tlMemberSearch,
+        page: 1,
+        pageSize: 200
+      })
+      .subscribe({
+        next: (r) => {
+          this.tlMembers = r.items;
+          this.pendingTlMemberIds = this.pendingTlMemberIds.filter((id) =>
+            this.tlMembers.some((m) => m.id === id)
+          );
+          this.tlMembersLoading = false;
+          this.cdr.detectChanges();
+        },
+        error: () => {
+          this.tlMembers = [];
+          this.tlMembersLoading = false;
+          this.showToastMessage('Could not load team members.', 'error');
+          this.cdr.detectChanges();
+        }
+      });
+  }
+
+  toggleTlMemberDropdown(): void {
+    this.tlMemberDropdownOpen = !this.tlMemberDropdownOpen;
+    this.gradeDropdownOpen = false;
+    this.sectionDropdownOpen = false;
+    this.studentDropdownOpen = false;
+    this.departmentDropdownOpen = false;
+    this.teamDropdownOpen = false;
+    this.staffDropdownOpen = false;
+  }
+
+  toggleAllTlMembers(event: Event): void {
+    const checked = (event.target as HTMLInputElement).checked;
+    this.pendingTlMemberIds = checked ? this.tlMembers.map((m) => m.id) : [];
+  }
+
+  toggleTlMemberSelection(staffId: number, event: Event): void {
+    const checked = (event.target as HTMLInputElement).checked;
+    this.pendingTlMemberIds = checked
+      ? [...this.pendingTlMemberIds, staffId]
+      : this.pendingTlMemberIds.filter((id) => id !== staffId);
+  }
+
+  onTlStaffCodeChanged(): void {
+    if (this.activeTask === 'task11') {
+      this.loadRecentTlAssignments();
+    }
+  }
+
+  private loadRecentTlAssignments(): void {
+    const code = this.tlStaffCodeInput.trim();
+    if (!code) {
+      this.recentTlAssignments = [];
+      return;
+    }
+    this.approvalService.getTlAssignments(code, 15).subscribe({
+      next: (rows) => {
+        this.recentTlAssignments = rows;
+        this.cdr.detectChanges();
+      },
+      error: () => {
+        this.recentTlAssignments = [];
+      }
+    });
+  }
+
+  submitTlAssignment(): void {
+    if (!this.canSubmitTlAssignment || !this.selectedTlTeam || this.tlSubmitting) {
+      return;
+    }
+    const dto: CreateTlTeamAssignmentDto = {
+      tlStaffCode: this.tlStaffCodeInput.trim(),
+      departmentName: this.selectedTlTeam.departmentName,
+      teamName: this.selectedTlTeam.teamName,
+      memberStaffIds: [...this.pendingTlMemberIds],
+      taskDescription: this.tlTaskDescription.trim()
+    };
+    this.tlSubmitting = true;
+    this.approvalService.createTlAssignment(dto).subscribe({
+      next: () => {
+        this.tlSubmitting = false;
+        this.pendingTlMemberIds = [];
+        this.tlTaskDescription = '';
+        this.showToastMessage('Assignment saved. MSSQL mirror syncs on the next worker run when enabled.', 'success');
+        this.loadRecentTlAssignments();
+        this.cdr.detectChanges();
+      },
+      error: () => {
+        this.tlSubmitting = false;
+        this.showToastMessage('Could not save assignment. Check team, members, and task text.', 'error');
+        this.cdr.detectChanges();
+      }
+    });
   }
 
   private buildAvatarDataUri(background: string, foreground: string): string {

@@ -74,6 +74,40 @@ ON CONFLICT (""StaffCode"") DO NOTHING;";
             await seedCommand.ExecuteNonQueryAsync(cancellationToken);
         }
 
+        public async Task<IReadOnlyList<TeamOptionItem>> GetTeamOptionsAsync(int limit, CancellationToken cancellationToken)
+        {
+            var teams = new List<TeamOptionItem>();
+
+            await using var connection = new NpgsqlConnection(_connectionString);
+            await connection.OpenAsync(cancellationToken);
+
+            const string sql = @"
+SELECT DISTINCT ""DepartmentName"", ""TeamName""
+FROM ""StaffDirectory""
+WHERE COALESCE(""IsActive"", TRUE) = TRUE
+  AND COALESCE(""IsSystemAccount"", FALSE) = FALSE
+ORDER BY ""DepartmentName"", ""TeamName""
+LIMIT @Limit";
+
+            await using var command = new NpgsqlCommand(sql, connection);
+            command.Parameters.AddWithValue("@Limit", limit);
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                var dept = reader.GetString(0);
+                var team = reader.GetString(1);
+                teams.Add(new TeamOptionItem
+                {
+                    DepartmentName = dept,
+                    TeamName = team,
+                    DisplayLabel = $"{dept} - {team}"
+                });
+            }
+
+            return teams;
+        }
+
         public async Task<IReadOnlyList<string>> GetDepartmentsAsync(string? search, int limit, CancellationToken cancellationToken)
         {
             var departments = new List<string>();

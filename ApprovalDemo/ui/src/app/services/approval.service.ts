@@ -1,15 +1,17 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
-import { ApprovalRequest, CreateRequestDto, DecisionDto, PagedResult, StaffDirectoryItem, StudentDirectoryItem } from '../models/approval.model';
+import { ApprovalRequest, CreateRequestDto, DecisionDto, CreateTlTeamAssignmentDto, PagedResult, StaffDirectoryItem, StudentDirectoryItem, TeamOptionItem, TlTeamAssignmentItem } from '../models/approval.model';
 
 @Injectable({
   providedIn: 'root'
 })
 export class ApprovalService {
-  private apiUrl = 'https://it-sw-training-approval-backend.onrender.com/api/approval-requests';
-  private studentApiUrl = 'https://it-sw-training-approval-backend.onrender.com/api/students';
-  private staffApiUrl = 'https://it-sw-training-approval-backend.onrender.com/api/staff';
+  private readonly apiRoot = 'https://it-sw-training-approval-backend.onrender.com/api';
+  private apiUrl = `${this.apiRoot}/approval-requests`;
+  private studentApiUrl = `${this.apiRoot}/students`;
+  private staffApiUrl = `${this.apiRoot}/staff`;
+  private tlApiUrl = `${this.apiRoot}/tl`;
 
   constructor(private http: HttpClient) { }
 
@@ -113,5 +115,36 @@ export class ApprovalService {
     return this.http.get<StaffDirectoryItem[]>(
       `${this.staffApiUrl}/by-ids?ids=${encodeURIComponent(csv)}&excludeSystemAccounts=${excludeSystemAccounts}`
     );
+  }
+
+  getTlTeamOptions(limit = 100): Observable<TeamOptionItem[]> {
+    return this.http.get<TeamOptionItem[]>(`${this.tlApiUrl}/team-options?limit=${limit}`);
+  }
+
+  getTlTeamMembers(params: {
+    department: string;
+    team: string;
+    search?: string;
+    page?: number;
+    pageSize?: number;
+  }): Observable<PagedResult<StaffDirectoryItem>> {
+    const search =
+      params.search && params.search.trim().length > 0 ? params.search.trim() : '%';
+    const page = params.page ?? 1;
+    const pageSize = params.pageSize ?? 100;
+    const department = encodeURIComponent(params.department);
+    const team = encodeURIComponent(params.team);
+    return this.http.get<PagedResult<StaffDirectoryItem>>(
+      `${this.tlApiUrl}/team-members?department=${department}&team=${team}&search=${encodeURIComponent(search)}&page=${page}&pageSize=${pageSize}`
+    );
+  }
+
+  createTlAssignment(dto: CreateTlTeamAssignmentDto): Observable<TlTeamAssignmentItem> {
+    return this.http.post<TlTeamAssignmentItem>(`${this.tlApiUrl}/assignments`, dto);
+  }
+
+  getTlAssignments(tlStaffCode: string, take = 20): Observable<TlTeamAssignmentItem[]> {
+    const code = encodeURIComponent(tlStaffCode.trim());
+    return this.http.get<TlTeamAssignmentItem[]>(`${this.tlApiUrl}/assignments?tlStaffCode=${code}&take=${take}`);
   }
 }

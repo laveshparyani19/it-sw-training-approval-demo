@@ -47,3 +47,28 @@ export interface PagedResult<T> {
   page: number;
   pageSize: number;
 }
+
+export interface TeamOptionItem {
+  departmentName: string;
+  teamName: string;
+  displayLabel: string;
+}
+
+export interface TlTeamAssignmentItem {
+  id: string;
+  tlStaffCode: string;
+  departmentName: string;
+  teamName: string;
+  memberStaffIds: number[];
+  taskDescription?: string;
+  createdAtUtc: string;
+  updatedAtUtc: string;
+}
+
+export interface CreateTlTeamAssignmentDto {
+  tlStaffCode: string;
+  departmentName: string;
+  teamName: string;
+  memberStaffIds: number[];
+  taskDescription?: string;
+}

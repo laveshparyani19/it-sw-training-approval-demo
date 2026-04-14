@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Data;
+using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -57,6 +58,7 @@ namespace ApprovalDemo.Api.Services
                     await EnsureMssqlSchemaAsync(cancellationToken);
                     await SyncStudentDirectorySnapshotAsync(cancellationToken);
                     await SyncStaffDirectorySnapshotAsync(cancellationToken);
+                    await SyncTlTeamAssignmentSnapshotAsync(cancellationToken);
                     await SynchronizeMirrorDeletesAsync(cancellationToken);
                     _mssqlReady = true;
                     _mssqlDisabledReason = string.Empty;
@@ -106,6 +108,7 @@ namespace ApprovalDemo.Api.Services
                 {
                     var studentUpsertsOnNoDelta = await SyncStudentDirectorySnapshotAsync(cancellationToken);
                     var staffUpsertsOnNoDelta = await SyncStaffDirectorySnapshotAsync(cancellationToken);
+                    var tlUpsertsOnNoDelta = await SyncTlTeamAssignmentSnapshotAsync(cancellationToken);
                     var noDeltaDeletes = await SynchronizeMirrorDeletesAsync(cancellationToken);
                     await MaybeRunDailyReconciliationAsync(cancellationToken);
                     return new SyncRunResult
@@ -116,7 +119,7 @@ namespace ApprovalDemo.Api.Services
                         Processed = 0,
                         Successful = 0,
                         Failed = 0,
-                        Message = $"No changed approval rows found. StudentDirectory snapshot upserted {studentUpsertsOnNoDelta} rows, StaffDirectory snapshot upserted {staffUpsertsOnNoDelta} rows. Mirror cleanup removed {noDeltaDeletes.approvalDeleted} approval rows, {noDeltaDeletes.studentDeleted} student rows and {noDeltaDeletes.staffDeleted} staff rows."
+                        Message = $"No changed approval rows found. StudentDirectory snapshot upserted {studentUpsertsOnNoDelta} rows, StaffDirectory snapshot upserted {staffUpsertsOnNoDelta} rows, TlTeamAssignment snapshot upserted {tlUpsertsOnNoDelta} rows. Mirror cleanup removed {noDeltaDeletes.approvalDeleted} approval rows, {noDeltaDeletes.studentDeleted} student rows, {noDeltaDeletes.staffDeleted} staff rows and {noDeltaDeletes.tlDeleted} TL assignment rows."
                     };
                 }
 
@@ -147,6 +150,7 @@ namespace ApprovalDemo.Api.Services
 
                 var studentUpserts = await SyncStudentDirectorySnapshotAsync(cancellationToken);
                 var staffUpserts = await SyncStaffDirectorySnapshotAsync(cancellationToken);
+                var tlUpserts = await SyncTlTeamAssignmentSnapshotAsync(cancellationToken);
                 var deleteSync = await SynchronizeMirrorDeletesAsync(cancellationToken);
                 await MaybeRunDailyReconciliationAsync(cancellationToken);
 
@@ -160,7 +164,7 @@ namespace ApprovalDemo.Api.Services
                     Failed = failed,
                     Message = failed > 0
                         ? "Stopped at first failed row. Failed row logged to dead-letter table for review."
-                        : $"Sync completed successfully. StudentDirectory snapshot upserted {studentUpserts} rows, StaffDirectory snapshot upserted {staffUpserts} rows. Mirror cleanup removed {deleteSync.approvalDeleted} approval rows, {deleteSync.studentDeleted} student rows and {deleteSync.staffDeleted} staff rows."
+                        : $"Sync completed successfully. StudentDirectory snapshot upserted {studentUpserts} rows, StaffDirectory snapshot upserted {staffUpserts} rows, TlTeamAssignment snapshot upserted {tlUpserts} rows. Mirror cleanup removed {deleteSync.approvalDeleted} approval rows, {deleteSync.studentDeleted} student rows, {deleteSync.staffDeleted} staff rows and {deleteSync.tlDeleted} TL assignment rows."
                 };
             }
             finally
@@ -467,7 +471,116 @@ WHEN NOT MATCHED THEN
             await command.ExecuteNonQueryAsync(cancellationToken);
         }
 
-        private async Task<(int approvalDeleted, int studentDeleted, int staffDeleted)> SynchronizeMirrorDeletesAsync(CancellationToken cancellationToken)
+        private async Task<int> SyncTlTeamAssignmentSnapshotAsync(CancellationToken cancellationToken)
+        {
+            var rows = await GetTlAssignmentSourceRowsAsync(cancellationToken);
+            if (rows.Count == 0)
+            {
+                return 0;
+            }
+
+            await using var connection = new SqlConnection(_mssqlConnectionString);
+            await connection.OpenAsync(cancellationToken);
+
+            foreach (var row in rows)
+            {
+                await UpsertTlAssignmentRowToMssqlAsync(connection, row, cancellationToken);
+            }
+
+            return rows.Count;
+        }
+
+        private async Task<List<TlAssignmentSourceRow>> GetTlAssignmentSourceRowsAsync(CancellationToken cancellationToken)
+        {
+            var rows = new List<TlAssignmentSourceRow>();
+
+            await using var connection = new NpgsqlConnection(_supabaseConnectionString);
+            await connection.OpenAsync(cancellationToken);
+
+            const string sql = @"
+SELECT
+    ""Id"",
+    ""TlStaffCode"",
+    ""DepartmentName"",
+    ""TeamName"",
+    ""MemberStaffIds"",
+    ""TaskDescription"",
+    ""CreatedAt"",
+    ""UpdatedAt""
+FROM ""TlTeamAssignment""
+ORDER BY ""CreatedAt"";";
+
+            await using var command = new NpgsqlCommand(sql, connection);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                var idsOrdinal = reader.GetOrdinal("MemberStaffIds");
+                var taskOrdinal = reader.GetOrdinal("TaskDescription");
+                int[] memberIds = reader.IsDBNull(idsOrdinal)
+                    ? Array.Empty<int>()
+                    : (int[])reader.GetValue(idsOrdinal);
+
+                rows.Add(new TlAssignmentSourceRow
+                {
+                    Id = reader.GetGuid(reader.GetOrdinal("Id")),
+                    TlStaffCode = reader.GetString(reader.GetOrdinal("TlStaffCode")),
+                    DepartmentName = reader.GetString(reader.GetOrdinal("DepartmentName")),
+                    TeamName = reader.GetString(reader.GetOrdinal("TeamName")),
+                    MemberStaffIds = memberIds,
+                    TaskDescription = reader.IsDBNull(taskOrdinal) ? null : reader.GetString(taskOrdinal),
+                    CreatedAtUtc = reader.GetDateTime(reader.GetOrdinal("CreatedAt")),
+                    UpdatedAtUtc = reader.GetDateTime(reader.GetOrdinal("UpdatedAt"))
+                });
+            }
+
+            return rows;
+        }
+
+        private static async Task UpsertTlAssignmentRowToMssqlAsync(SqlConnection connection, TlAssignmentSourceRow row, CancellationToken cancellationToken)
+        {
+            const string sql = @"
+MERGE dbo.TlTeamAssignmentMirror AS target
+USING (
+    SELECT
+        @Id AS Id,
+        @TlStaffCode AS TlStaffCode,
+        @DepartmentName AS DepartmentName,
+        @TeamName AS TeamName,
+        @MemberStaffIdsJson AS MemberStaffIdsJson,
+        @TaskDescription AS TaskDescription,
+        @CreatedAt AS CreatedAt,
+        @UpdatedAt AS UpdatedAt
+) AS source
+ON target.Id = source.Id
+WHEN MATCHED AND target.UpdatedAt <= source.UpdatedAt THEN
+    UPDATE SET
+        TlStaffCode = source.TlStaffCode,
+        DepartmentName = source.DepartmentName,
+        TeamName = source.TeamName,
+        MemberStaffIdsJson = source.MemberStaffIdsJson,
+        TaskDescription = source.TaskDescription,
+        CreatedAt = source.CreatedAt,
+        UpdatedAt = source.UpdatedAt,
+        LastSyncedAt = SYSUTCDATETIME()
+WHEN NOT MATCHED THEN
+    INSERT (Id, TlStaffCode, DepartmentName, TeamName, MemberStaffIdsJson, TaskDescription, CreatedAt, UpdatedAt, LastSyncedAt)
+    VALUES (source.Id, source.TlStaffCode, source.DepartmentName, source.TeamName, source.MemberStaffIdsJson, source.TaskDescription, source.CreatedAt, source.UpdatedAt, SYSUTCDATETIME());";
+
+            await using var command = new SqlCommand(sql, connection);
+            command.Parameters.Add("@Id", SqlDbType.UniqueIdentifier).Value = row.Id;
+            command.Parameters.Add("@TlStaffCode", SqlDbType.NVarChar, 50).Value = row.TlStaffCode;
+            command.Parameters.Add("@DepartmentName", SqlDbType.NVarChar, 100).Value = row.DepartmentName;
+            command.Parameters.Add("@TeamName", SqlDbType.NVarChar, 100).Value = row.TeamName;
+            command.Parameters.Add("@MemberStaffIdsJson", SqlDbType.NVarChar, -1).Value = JsonSerializer.Serialize(row.MemberStaffIds);
+            command.Parameters.Add("@TaskDescription", SqlDbType.NVarChar, -1).Value = (object?)row.TaskDescription ?? DBNull.Value;
+            command.Parameters.Add("@CreatedAt", SqlDbType.DateTimeOffset).Value = new DateTimeOffset(DateTime.SpecifyKind(row.CreatedAtUtc, DateTimeKind.Utc));
+            command.Parameters.Add("@UpdatedAt", SqlDbType.DateTimeOffset).Value = new DateTimeOffset(DateTime.SpecifyKind(row.UpdatedAtUtc, DateTimeKind.Utc));
+
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        private async Task<(int approvalDeleted, int studentDeleted, int staffDeleted, int tlDeleted)> SynchronizeMirrorDeletesAsync(CancellationToken cancellationToken)
         {
             var approvalSourceIds = await GetSourceIdsAsync(cancellationToken);
             var approvalTargetIds = await GetTargetIdsAsync(cancellationToken);
@@ -481,14 +594,39 @@ WHEN NOT MATCHED THEN
             var staffTargetIds = await GetStaffTargetIdsAsync(cancellationToken);
             var staffStaleIds = staffTargetIds.Where(id => !staffSourceIds.Contains(id)).ToArray();
 
+            var tlSourceIds = await GetTlAssignmentSourceIdsAsync(cancellationToken);
+            var tlTargetIds = await GetTlAssignmentTargetIdsAsync(cancellationToken);
+            var tlStaleIds = tlTargetIds.Where(id => !tlSourceIds.Contains(id)).ToArray();
+
             await using var connection = new SqlConnection(_mssqlConnectionString);
             await connection.OpenAsync(cancellationToken);
 
             var approvalDeleted = await DeleteRowsByIdsAsync(connection, "DELETE FROM dbo.ApprovalRequestMirror WHERE Id = @Id", approvalStaleIds, cancellationToken);
             var studentDeleted = await DeleteRowsByIdsAsync(connection, "DELETE FROM dbo.StudentDirectoryMirror WHERE Id = @Id", studentStaleIds, cancellationToken);
             var staffDeleted = await DeleteRowsByIdsAsync(connection, "DELETE FROM dbo.StaffDirectoryMirror WHERE Id = @Id", staffStaleIds, cancellationToken);
+            var tlDeleted = await DeleteRowsByGuidsAsync(connection, "DELETE FROM dbo.TlTeamAssignmentMirror WHERE Id = @Id", tlStaleIds, cancellationToken);
 
-            return (approvalDeleted, studentDeleted, staffDeleted);
+            return (approvalDeleted, studentDeleted, staffDeleted, tlDeleted);
+        }
+
+        private static async Task<int> DeleteRowsByGuidsAsync(SqlConnection connection, string sql, IReadOnlyCollection<Guid> ids, CancellationToken cancellationToken)
+        {
+            if (ids.Count == 0)
+            {
+                return 0;
+            }
+
+            var deleted = 0;
+            await using var command = new SqlCommand(sql, connection);
+            var parameter = command.Parameters.Add("@Id", SqlDbType.UniqueIdentifier);
+
+            foreach (var id in ids)
+            {
+                parameter.Value = id;
+                deleted += await command.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            return deleted;
         }
 
         private static async Task<int> DeleteRowsByIdsAsync(SqlConnection connection, string sql, IReadOnlyCollection<int> ids, CancellationToken cancellationToken)
@@ -859,6 +997,42 @@ VALUES (@SyncName, @EntityId, @OperationId, @Payload::jsonb, @Error, @AttemptCou
             return ids;
         }
 
+        private async Task<HashSet<Guid>> GetTlAssignmentSourceIdsAsync(CancellationToken cancellationToken)
+        {
+            var ids = new HashSet<Guid>();
+            await using var connection = new NpgsqlConnection(_supabaseConnectionString);
+            await connection.OpenAsync(cancellationToken);
+
+            const string sql = "SELECT \"Id\" FROM \"TlTeamAssignment\"";
+            await using var command = new NpgsqlCommand(sql, connection);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                ids.Add(reader.GetGuid(0));
+            }
+
+            return ids;
+        }
+
+        private async Task<HashSet<Guid>> GetTlAssignmentTargetIdsAsync(CancellationToken cancellationToken)
+        {
+            var ids = new HashSet<Guid>();
+            await using var connection = new SqlConnection(_mssqlConnectionString);
+            await connection.OpenAsync(cancellationToken);
+
+            const string sql = "SELECT Id FROM dbo.TlTeamAssignmentMirror";
+            await using var command = new SqlCommand(sql, connection);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                ids.Add(reader.GetGuid(0));
+            }
+
+            return ids;
+        }
+
         private async Task SaveReconciliationReportAsync(SyncReconciliationResult report, CancellationToken cancellationToken)
         {
             await using var connection = new NpgsqlConnection(_supabaseConnectionString);
@@ -946,7 +1120,24 @@ CREATE TABLE IF NOT EXISTS ""SyncReconciliationReport"" (
     ""MissingInTarget"" integer NOT NULL,
     ""MissingInSource"" integer NOT NULL,
     ""Summary"" text NOT NULL
-);";
+);
+
+CREATE TABLE IF NOT EXISTS ""TlTeamAssignment"" (
+    ""Id"" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    ""TlStaffCode"" VARCHAR(50) NOT NULL,
+    ""DepartmentName"" VARCHAR(100) NOT NULL,
+    ""TeamName"" VARCHAR(100) NOT NULL,
+    ""MemberStaffIds"" INTEGER[] NOT NULL,
+    ""TaskDescription"" TEXT NULL,
+    ""CreatedAt"" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    ""UpdatedAt"" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS ""IX_TlTeamAssignment_TlStaffCode""
+ON ""TlTeamAssignment"" (""TlStaffCode"");
+
+CREATE INDEX IF NOT EXISTS ""IX_TlTeamAssignment_Dept_Team""
+ON ""TlTeamAssignment"" (""DepartmentName"", ""TeamName"");";
 
             await using var command = new NpgsqlCommand(sql, connection);
             await command.ExecuteNonQueryAsync(cancellationToken);
@@ -1057,6 +1248,31 @@ IF NOT EXISTS (
 )
 BEGIN
     CREATE INDEX IX_StaffDirectoryMirror_Department_Team ON dbo.StaffDirectoryMirror(DepartmentName, TeamName);
+END;
+
+IF OBJECT_ID(N'dbo.TlTeamAssignmentMirror', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.TlTeamAssignmentMirror (
+        Id UNIQUEIDENTIFIER NOT NULL PRIMARY KEY,
+        TlStaffCode NVARCHAR(50) NOT NULL,
+        DepartmentName NVARCHAR(100) NOT NULL,
+        TeamName NVARCHAR(100) NOT NULL,
+        MemberStaffIdsJson NVARCHAR(MAX) NOT NULL,
+        TaskDescription NVARCHAR(MAX) NULL,
+        CreatedAt DATETIMEOFFSET(0) NOT NULL,
+        UpdatedAt DATETIMEOFFSET(0) NOT NULL,
+        LastSyncedAt DATETIMEOFFSET(0) NOT NULL CONSTRAINT DF_TlTeamAssignmentMirror_LastSyncedAt DEFAULT SYSUTCDATETIME()
+    );
+END;
+
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = N'IX_TlTeamAssignmentMirror_TlStaffCode'
+      AND object_id = OBJECT_ID(N'dbo.TlTeamAssignmentMirror')
+)
+BEGIN
+    CREATE INDEX IX_TlTeamAssignmentMirror_TlStaffCode ON dbo.TlTeamAssignmentMirror(TlStaffCode);
 END;";
 
             await using var command = new SqlCommand(sql, connection);
@@ -1135,6 +1351,18 @@ END;";
         public string? PhotoUrl { get; init; }
         public bool IsActive { get; init; }
         public bool IsSystemAccount { get; init; }
+        public DateTime UpdatedAtUtc { get; init; }
+    }
+
+    internal sealed class TlAssignmentSourceRow
+    {
+        public Guid Id { get; init; }
+        public string TlStaffCode { get; init; } = string.Empty;
+        public string DepartmentName { get; init; } = string.Empty;
+        public string TeamName { get; init; } = string.Empty;
+        public int[] MemberStaffIds { get; init; } = Array.Empty<int>();
+        public string? TaskDescription { get; init; }
+        public DateTime CreatedAtUtc { get; init; }
         public DateTime UpdatedAtUtc { get; init; }
     }
 }

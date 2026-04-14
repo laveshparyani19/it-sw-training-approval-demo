@@ -18,6 +18,7 @@ packages/
 
 # Build outputs
 ApprovalDemo/api/build_output.txt
+ApprovalDemo/api/publish/
 ApprovalDemo/ui/dist/
 
 # IDE
