@@ -139,7 +139,7 @@ ON CONFLICT (""StaffCode"", ""LeaveType"", ""AsOfDate"") DO NOTHING;
         const string backfill = @"
 UPDATE ""StudentDirectory"" SET ""AcademicYearCode"" = '2025-26' WHERE ""AcademicYearCode"" IS NULL OR TRIM(""AcademicYearCode"") = '';
 
-UPDATE ""StudentDirectory"" s SET ""ProgramCode"" = v.""Code""
+UPDATE ""StudentDirectory"" s SET ""ProgramCode"" = m.prog
 FROM (VALUES
   ('FSK2019011', 'PRG-PYP'),
   ('FSK2023002', 'PRG-DP'),
